@@ -17,8 +17,16 @@ services:
         value: "8"
       - key: PORT
         value: "8000"
-    buildCommand: docker build -t suna-backend .
-    startCommand: python simple_server.py
+      - key: REDIS_HOST
+        value: localhost
+      - key: REDIS_PORT
+        value: "6379"
+      - key: REDIS_SSL
+        value: "false"
+      - key: API_KEY_SECRET
+        value: "render-production-secret-key-2024"
+      - key: MCP_CREDENTIAL_ENCRYPTION_KEY
+        value: "render-mcp-encryption-key-2024"
     disk:
       name: suna-data
       mountPath: /data
