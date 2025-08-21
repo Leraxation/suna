@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: suna-ai-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: ENV_MODE
+        value: production
+      - key: PYTHONPATH
+        value: /app
+      - key: WORKERS
+        value: "8"
+      - key: PORT
+        value: "8000"
+    buildCommand: docker build -t suna-backend .
+    startCommand: python simple_server.py
+    disk:
+      name: suna-data
+      mountPath: /data
+      sizeGB: 1
