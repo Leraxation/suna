@@ -192,7 +192,6 @@ supabase/.temp/storage-version
 .env.scripts
 
 redis_data
-rabbitmq_data
 
 .setup_progress
 
@@ -200,3 +199,13 @@ rabbitmq_data
 
 backend/.test_token_compression.py
 backend/test_token_compression_data.py
+<<<<<<< HEAD
+
+.vercel
+=======
+
+dump.rdb
+
+# CodeWebChat state and logs (auto-added)
+.cwc/
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc

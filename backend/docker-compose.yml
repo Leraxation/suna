@@ -17,8 +17,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     networks:
       - app-network
     environment:
@@ -26,8 +24,14 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - LOG_LEVEL=INFO
+<<<<<<< HEAD
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
+      - DAYTONA_API_KEY=dtn_c7062d78df6f39e0665774ae54282932becefc8b8d4f52e85d333b0411a4dfb3
+      - DAYTONA_SERVER_URL=https://app.daytona.io/api
+      - DAYTONA_TARGET=us
+=======
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
     logging:
       driver: "json-file"
       options:
@@ -57,8 +61,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     networks:
       - app-network
     environment:
@@ -66,8 +68,14 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - LOG_LEVEL=INFO
+<<<<<<< HEAD
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
+      - DAYTONA_API_KEY=dtn_c7062d78df6f39e0665774ae54282932becefc8b8d4f52e85d333b0411a4dfb3
+      - DAYTONA_SERVER_URL=https://app.daytona.io/api
+      - DAYTONA_TARGET=us
+=======
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
     logging:
       driver: "json-file"
       options:
@@ -81,8 +89,8 @@ services:
 
   redis:
     image: redis:8-alpine
-    # ports:
-    #   - "127.0.0.1:6379:6379"
+    ports:
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
       - ./services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -102,31 +110,9 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  rabbitmq:
-    image: rabbitmq
-    # ports:
-    #   - "127.0.0.1:5672:5672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    restart: unless-stopped
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 networks:
   app-network:
     driver: bridge
 
 volumes:
   redis_data:
-  rabbitmq_data:

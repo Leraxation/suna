@@ -1,7 +1,7 @@
 [project]
 name = "suna"
 version = "1.0"
-description = "open source generalist AI Agent"
+description = "open source generalist AI Worker"
 authors = [{ name = "marko-kraemer", email = "mail@markokraemer.com" }]
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -12,7 +12,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
   "python-dotenv==1.0.1",
-  "litellm==1.66.1",
+  "litellm==1.75.2",
   "click==8.1.7",
   "questionary==2.0.1",
   "requests==2.32.3",
@@ -20,7 +20,6 @@ dependencies = [
   "setuptools==75.3.0",
   "pytest==8.3.3",
   "pytest-asyncio==0.24.0",
-  "asyncio==3.4.3",
   "altair==4.2.2",
   "prisma==0.15.0",
   "fastapi==0.115.12",
@@ -28,7 +27,7 @@ dependencies = [
   "python-multipart==0.0.20",
   "redis==5.2.1",
   "upstash-redis==1.3.0",
-  "supabase==2.15.0",
+  "supabase==2.17.0",
   "pyjwt==2.10.1",
   "exa-py==1.9.1",
   "e2b-code-interpreter==1.2.0",
@@ -38,17 +37,20 @@ dependencies = [
   "daytona-api-client==0.21.0",
   "daytona-api-client-async==0.21.0",
   "boto3==1.37.3",
-  "openai==1.72.0",
+  "openai==1.90.0",
   "nest-asyncio==1.6.0",
   "vncdotool==1.2.0",
   "tavily-python==0.5.4",
   "pytesseract==0.3.13",
-  "stripe==12.0.1",
+  "stripe==11.6.0",
   "dramatiq==1.18.0",
-  "pika==1.3.2",
   "prometheus-client==0.21.1",
   "langfuse==2.60.5",
-  "Pillow==10.0.0",
+<<<<<<< HEAD
+  "Pillow>=9.0.0",
+=======
+  "Pillow>=10.4.0",
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
   "mcp==1.9.4",
   "httpx==0.28.0",
   "aiohttp==3.12.0",
@@ -59,8 +61,18 @@ dependencies = [
   "cryptography>=41.0.0",
   "apscheduler>=3.10.0",
   "croniter>=1.4.0",
-  "qstash>=2.0.0",
   "structlog==25.4.0",
+  "PyPDF2==3.0.1",
+  "python-docx==1.1.0",
+  "openpyxl==3.1.2",
+  "chardet==5.2.0",
+  "PyYAML==6.0.1",
+  "composio>=0.8.0",
+  "python-pptx>=1.0.0",
+  "beautifulsoup4>=4.12.0",
+  "cssutils>=2.9.0",
+  "fastapi-sso>=0.9.0",
+  "daytona>=0.21.6",
 ]
 
 [project.urls]
@@ -69,3 +81,8 @@ repository = "https://github.com/kortix-ai/suna"
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = [
+    "orjson>=3.11.1",
+]

@@ -1,6 +1,6 @@
 # Suna Self-Hosting Guide
 
-This guide provides detailed instructions for setting up and hosting your own instance of Suna, an open-source generalist AI agent.
+This guide provides detailed instructions for setting up and hosting your own instance of Suna, an open-source generalist AI Worker.
 
 ## Table of Contents
 
@@ -47,6 +47,9 @@ Obtain the following API keys:
   - [OpenRouter](https://openrouter.ai/)
   - [AWS Bedrock](https://aws.amazon.com/bedrock/)
 
+- **AI-Powered Code Editing (Optional but Recommended)**:
+  - [Morph](https://morphllm.com/api-keys) - For intelligent code editing capabilities
+
 - **Search and Web Scraping**:
 
   - [Tavily](https://tavily.com/) - For enhanced search capabilities
@@ -56,12 +59,12 @@ Obtain the following API keys:
   - [Daytona](https://app.daytona.io/) - For secure agent execution
 
 - **Background Job Processing**:
-  - [QStash](https://console.upstash.com/qstash) - For workflows, automated tasks, and webhook handling
+  - Supabase Cron - For workflows, automated tasks, and webhook handling
 
 #### Optional
 
 - **RapidAPI** - For accessing additional API services (enables LinkedIn scraping and other tools)
-- **Smithery** - For custom agents and workflows ([Get API key](https://smithery.ai/))
+- **Custom MCP Servers** - For extending functionality with custom tools
 
 ### 3. Required Software
 
@@ -124,17 +127,9 @@ As part of the setup, you'll need to:
 1. Create a Daytona account
 2. Generate an API key
 3. Create a Snapshot:
-   - Name: `kortix/suna:0.1.3`
-   - Image name: `kortix/suna:0.1.3`
+   - Name: `kortix/suna:0.1.3.6`
+   - Image name: `kortix/suna:0.1.3.6`
    - Entrypoint: `/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf`
-
-### 5. QStash Configuration
-
-QStash is required for background job processing, workflows, and webhook handling:
-
-1. Create an account at [Upstash Console](https://console.upstash.com/qstash)
-2. Get your QStash token and signing keys
-3. Configure a publicly accessible webhook base URL for workflow callbacks
 
 ## Manual Configuration
 
@@ -161,15 +156,13 @@ REDIS_PORT=6379
 REDIS_PASSWORD=
 REDIS_SSL=false
 
-# RABBITMQ
-RABBITMQ_HOST=rabbitmq
-RABBITMQ_PORT=5672
-
 # LLM Providers
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENAI_API_KEY=your-openai-key
 OPENROUTER_API_KEY=your-openrouter-key
-MODEL_TO_USE=anthropic/claude-sonnet-4-20250514
+GEMINI_API_KEY=your-gemini-api-key
+MORPH_API_KEY=
+
 
 # WEB SEARCH
 TAVILY_API_KEY=your-tavily-key
@@ -184,18 +177,14 @@ DAYTONA_SERVER_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
 
 # Background job processing (Required)
-QSTASH_URL=https://qstash.upstash.io
-QSTASH_TOKEN=your-qstash-token
-QSTASH_CURRENT_SIGNING_KEY=your-current-signing-key
-QSTASH_NEXT_SIGNING_KEY=your-next-signing-key
-WEBHOOK_BASE_URL=https://yourdomain.com
+WEBHOOK_BASE_URL=https://your-domain.ngrok.io
 
 # MCP Configuration
 MCP_CREDENTIAL_ENCRYPTION_KEY=your-generated-encryption-key
 
 # Optional APIs
 RAPID_API_KEY=your-rapidapi-key
-SMITHERY_API_KEY=your-smithery-key
+# MCP server configurations in database
 
 NEXT_PUBLIC_URL=http://localhost:3000
 ```
@@ -242,10 +231,10 @@ python start.py # Use the same to stop it later
 
 This method requires you to start each component separately:
 
-1. Start Redis and RabbitMQ (required for backend):
+1. Start Redis (required for backend):
 
 ```bash
-docker compose up redis rabbitmq -d
+docker compose up redis -d
 # or
 python start.py # Use the same to stop it later
 ```
@@ -296,13 +285,7 @@ uv run dramatiq run_agent_background
    - Verify Daytona API key
    - Check if the container image is correctly configured
 
-5. **QStash/Webhook issues**
-
-   - Verify QStash token and signing keys
-   - Ensure webhook base URL is publicly accessible
-   - Check QStash console for delivery status
-
-6. **Setup wizard issues**
+5. **Setup wizard issues**
 
    - Delete `.setup_progress` file to reset the setup wizard
    - Check that all required tools are installed and accessible
@@ -317,7 +300,7 @@ docker compose logs -f
 
 # Frontend logs (manual setup)
 cd frontend
-npm run dev -- --turbopack
+npm run dev
 
 # Backend logs (manual setup)
 cd backend

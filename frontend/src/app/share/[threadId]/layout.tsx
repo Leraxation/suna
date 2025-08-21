@@ -7,25 +7,28 @@ export async function generateMetadata({ params }): Promise<Metadata> {
     title: 'Shared Conversation | Kortix Suna',
     description: 'Replay this Agent conversation on Kortix Suna',
     alternates: {
-      canonical: `${process.env.NEXT_PUBLIC_URL}/share/${threadId}`,
+      canonical: `${process.env.NEXT_PUBLIC_APP_URL}/share/${threadId}`,
     },
     openGraph: {
       title: 'Shared Conversation | Kortix Suna',
       description: 'Replay this Agent conversation on Kortix Suna',
-      images: [`${process.env.NEXT_PUBLIC_URL}/share-page/og-fallback.png`],
+      images: [`${process.env.NEXT_PUBLIC_APP_URL}/share-page/og-fallback.png`],
     },
   };
 
   try {
     const threadData = await getThread(threadId);
+    if (!threadData || !threadData.project_id) { // <-- ADD THIS CHECK
+     return fallbackMetaData; // <-- Return early if threadData or project_id is missing
+    }
     const projectData = await getProject(threadData.project_id);
 
-    if (!threadData || !projectData) {
-      return fallbackMetaData;
+    if (!projectData) { // <-- This check might need adjustment if you moved lines, ensure it's checking projectData
+     return fallbackMetaData;
     }
 
     const isDevelopment =
-      process.env.NODE_ENV === 'development' ||
+      // process.env.NODE_ENV === 'development' ||
       process.env.NEXT_PUBLIC_ENV_MODE === 'LOCAL' ||
       process.env.NEXT_PUBLIC_ENV_MODE === 'local';
 
@@ -34,14 +37,14 @@ export async function generateMetadata({ params }): Promise<Metadata> {
       projectData.description ||
       'Replay this Agent conversation on Kortix Suna';
     const ogImage = isDevelopment
-      ? `${process.env.NEXT_PUBLIC_URL}/share-page/og-fallback.png`
-      : `${process.env.NEXT_PUBLIC_URL}/api/share-page/og-image?title=${projectData.name}`;
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/share-page/og-fallback.png`
+      : `${process.env.NEXT_PUBLIC_APP_URL}/api/share-page/og-image?title=${projectData.name}`;
 
     return {
       title,
       description,
       alternates: {
-        canonical: `${process.env.NEXT_PUBLIC_URL}/share/${threadId}`,
+        canonical: `${process.env.NEXT_PUBLIC_APP_URL}/share/${threadId}`,
       },
       openGraph: {
         title,

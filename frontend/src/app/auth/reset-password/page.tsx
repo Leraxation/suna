@@ -13,7 +13,7 @@ import { resetPassword } from '../actions';
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const code = searchParams.get('code');
+  const code = searchParams?.get('code');
 
   const [resetSuccess, setResetSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

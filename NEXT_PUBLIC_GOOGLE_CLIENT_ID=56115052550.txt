@@ -1,0 +1,1 @@
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=56115052550-1sl7ppupetmqf8if9as6laeve6q1ic7g.apps.googleusercontent.com

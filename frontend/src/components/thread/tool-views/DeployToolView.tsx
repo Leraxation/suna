@@ -61,7 +61,7 @@ function extractDeployData(assistantContent: any, toolContent: any): {
             const parsed = JSON.parse(toolStr);
 
             // Handle the nested tool_execution structure
-            let resultData = null;
+            let resultData: any = null;
             if (parsed.tool_execution && parsed.tool_execution.result) {
                 resultData = parsed.tool_execution.result;
                 // Also extract arguments if not found in assistant content
@@ -75,17 +75,68 @@ function extractDeployData(assistantContent: any, toolContent: any): {
             }
 
             if (resultData) {
+                // The backend returns result.output as a string; try to parse as JSON first
+                let parsedOutput: any = null;
+                if (typeof resultData.output === 'string') {
+                    try {
+                        parsedOutput = JSON.parse(resultData.output);
+                    } catch (_) {
+                        parsedOutput = null;
+                    }
+                } else if (resultData.output && typeof resultData.output === 'object') {
+                    parsedOutput = resultData.output;
+                }
+
+                const explicitUrl = parsedOutput?.url || resultData.url;
+                const explicitMessage = parsedOutput?.message || resultData.message;
+                const explicitRaw = parsedOutput?.output ?? resultData.output;
+
                 deployResult = {
-                    message: resultData.output?.message || null,
-                    output: resultData.output?.output || null,
+                    message: explicitMessage || null,
+                    output: typeof explicitRaw === 'string' ? explicitRaw : (explicitRaw ? JSON.stringify(explicitRaw) : null),
                     success: resultData.success !== undefined ? resultData.success : true,
+                    url: typeof explicitUrl === 'string' ? explicitUrl : undefined,
                 };
 
-                // Try to extract deployment URL from output
-                if (deployResult.output) {
-                    const urlMatch = deployResult.output.match(/https:\/\/[^\s]+\.pages\.dev[^\s]*/);
-                    if (urlMatch) {
-                        deployResult.url = urlMatch[0];
+                // Fallback to extracting from raw output if URL not explicitly provided
+                if (!deployResult.url && deployResult.output) {
+                    const matches = Array.from(
+                        deployResult.output.matchAll(/https:\/\/[^\s"']*\.pages\.dev[^\s"']*/g)
+                    ).map(m => m[0]);
+
+                    if (matches.length > 0) {
+                        // Prefer canonical production domain (project.pages.dev => hostname has 3 parts)
+                        let chosen: string | undefined = undefined;
+                        for (const u of matches) {
+                            try {
+                                const hostParts = new URL(u).hostname.split('.');
+                                if (hostParts.length === 3 && hostParts[1] === 'pages' && hostParts[2] === 'dev') {
+                                    chosen = u;
+                                    break;
+                                }
+                            } catch (_) {
+                                // ignore parse errors
+                            }
+                        }
+
+                        // If only a preview URL exists (hash.project.pages.dev), derive production by stripping the first label
+                        if (!chosen) {
+                            const first = matches[0];
+                            try {
+                                const urlObj = new URL(first);
+                                const hostParts = urlObj.hostname.split('.');
+                                if (hostParts.length > 3 && hostParts.slice(-2).join('.') === 'pages.dev') {
+                                    const prodHost = hostParts.slice(1).join('.'); // drop preview hash
+                                    chosen = `${urlObj.protocol}//${prodHost}${urlObj.pathname}`;
+                                } else {
+                                    chosen = first;
+                                }
+                            } catch (_) {
+                                chosen = first;
+                            }
+                        }
+
+                        deployResult.url = chosen;
                     }
                 }
             }
@@ -133,7 +184,7 @@ export function DeployToolView({
     }, [deployResult?.output]);
 
     return (
-        <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+        <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
             <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
                 <div className="flex flex-row items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -223,7 +274,7 @@ export function DeployToolView({
                                     {/* Terminal Output */}
                                     {cleanOutput.length > 0 && (
                                         <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
-                                            <div className="bg-zinc-200 dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
+                                            <div className="bg-accent px-4 py-2 flex items-center gap-2">
                                                 <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                                                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                                     Deployment Log
@@ -259,7 +310,7 @@ export function DeployToolView({
                                     {/* Raw Error Output */}
                                     {rawContent && (
                                         <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
-                                            <div className="bg-zinc-200 dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
+                                            <div className="bg-accent px-4 py-2 flex items-center gap-2">
                                                 <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                                                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                                     Error Details
@@ -280,4 +331,4 @@ export function DeployToolView({
             </CardContent>
         </Card>
     );
-} 
+}

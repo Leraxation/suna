@@ -12,7 +12,7 @@ export function CompanyShowcase() {
       <p className="text-muted-foreground font-medium">
         Trusted by fast-growing startups
       </p>
-      <div className="grid w-full max-w-7xl grid-cols-2 md:grid-cols-4 overflow-hidden border-y border-border items-center justify-center z-20">
+      <div className="grid w-full grid-cols-2 md:grid-cols-4 overflow-hidden border-y border-border items-center justify-center z-20">
         {companyShowcase.companyLogos.map((logo) => (
           <Link
             href="#"
@@ -20,7 +20,7 @@ export function CompanyShowcase() {
             key={logo.id}
           >
             <div className="transition-all duration-200 [cubic-bezier(0.165, 0.84, 0.44, 1)] translate-y-0 group-hover:-translate-y-4 duration-300 flex items-center justify-center w-full h-full">
-              {logo.logo}
+              <div className="text-2xl font-bold text-gray-600">{logo.logoText}</div>
             </div>
             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 translate-y-8 group-hover:translate-y-4 transition-all duration-300 ease-[cubic-bezier(0.165, 0.84, 0.44, 1)]">
               <span className="flex items-center gap-2 text-sm font-medium">

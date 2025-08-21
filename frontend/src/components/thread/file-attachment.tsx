@@ -1,15 +1,15 @@
 import React from 'react';
-import Image from 'next/image';
 import {
-    FileText, FileImage, FileCode, FilePlus, FileSpreadsheet, FileVideo,
+    FileText, FileImage, FileCode, FileSpreadsheet, FileVideo,
     FileAudio, FileType, Database, Archive, File, ExternalLink,
-    Download, Loader2
+    Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AttachmentGroup } from './attachment-group';
 import { HtmlRenderer } from './preview-renderers/html-renderer';
 import { MarkdownRenderer } from './preview-renderers/markdown-renderer';
 import { CsvRenderer } from './preview-renderers/csv-renderer';
+import { PdfRenderer as PdfPreviewRenderer } from './preview-renderers/pdf-renderer';
 import { useFileContent, useImageContent } from '@/hooks/react-query/files';
 import { useAuth } from '@/components/AuthProvider';
 import { Project } from '@/lib/api';
@@ -156,11 +156,13 @@ interface FileAttachmentProps {
      */
     collapsed?: boolean;
     project?: Project;
+    isSingleItemGrid?: boolean; // New prop to detect single item in grid
 }
 
 // Cache fetched content between mounts to avoid duplicate fetches
-const contentCache = new Map<string, string>();
-const errorCache = new Set<string>();
+// Content caches for file attachment optimization
+// const contentCache = new Map<string, string>();
+// const errorCache = new Set<string>();
 
 export function FileAttachment({
     filepath,
@@ -171,7 +173,8 @@ export function FileAttachment({
     localPreviewUrl,
     customStyle,
     collapsed = true,
-    project
+    project,
+    isSingleItemGrid = false
 }: FileAttachmentProps) {
     // Authentication 
     const { session } = useAuth();
@@ -192,10 +195,11 @@ export function FileAttachment({
     const isImage = fileType === 'image';
     const isHtmlOrMd = extension === 'html' || extension === 'htm' || extension === 'md' || extension === 'markdown';
     const isCsv = extension === 'csv' || extension === 'tsv';
+    const isPdf = extension === 'pdf';
     const isGridLayout = customStyle?.gridColumn === '1 / -1' || Boolean(customStyle && ('--attachment-height' in customStyle));
     // Define isInlineMode early, before any hooks
     const isInlineMode = !isGridLayout;
-    const shouldShowPreview = (isHtmlOrMd || isCsv) && showPreview && collapsed === false;
+    const shouldShowPreview = (isHtmlOrMd || isCsv || isPdf) && showPreview && collapsed === false;
 
     // Use the React Query hook to fetch file content
     const {
@@ -203,8 +207,8 @@ export function FileAttachment({
         isLoading: fileContentLoading,
         error: fileContentError
     } = useFileContent(
-        shouldShowPreview ? sandboxId : undefined,
-        shouldShowPreview ? filepath : undefined
+        (isHtmlOrMd || isCsv) && shouldShowPreview ? sandboxId : undefined,
+        (isHtmlOrMd || isCsv) && shouldShowPreview ? filepath : undefined
     );
 
     // Use the React Query hook to fetch image content with authentication
@@ -217,12 +221,22 @@ export function FileAttachment({
         isImage && showPreview ? filepath : undefined
     );
 
+    // For PDFs we also fetch blob URL via the same binary hook used for images
+    const {
+        data: pdfBlobUrl,
+        isLoading: pdfLoading,
+        error: pdfError
+    } = useImageContent(
+        isPdf && shouldShowPreview && sandboxId ? sandboxId : undefined,
+        isPdf && shouldShowPreview ? filepath : undefined
+    );
+
     // Set error state based on query errors
     React.useEffect(() => {
-        if (fileContentError || imageError) {
+        if (fileContentError || imageError || pdfError) {
             setHasError(true);
         }
-    }, [fileContentError, imageError]);
+    }, [fileContentError, imageError, pdfError]);
 
     const handleClick = () => {
         if (onClick) {
@@ -234,7 +248,11 @@ export function FileAttachment({
     if (isImage && showPreview) {
         // Use custom height for images if provided through CSS variable
         const imageHeight = isGridLayout
-            ? customStyle['--attachment-height'] as string
+<<<<<<< HEAD
+            ? (customStyle?.['--attachment-height'] as string) || '54px'
+=======
+            ? (customStyle as any)['--attachment-height'] as string
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
             : '54px';
 
         // Show loading state for images
@@ -253,8 +271,14 @@ export function FileAttachment({
                     )}
                     style={{
                         maxWidth: "100%",
+<<<<<<< HEAD
                         height: isGridLayout ? imageHeight : 'auto',
+                        ...(customStyle || {})
+=======
+                        height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
+                        maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
                         ...customStyle
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     }}
                     title={filename}
                 >
@@ -279,8 +303,14 @@ export function FileAttachment({
                     )}
                     style={{
                         maxWidth: "100%",
+<<<<<<< HEAD
                         height: isGridLayout ? imageHeight : 'auto',
+                        ...(customStyle || {})
+=======
+                        height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
+                        maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
                         ...customStyle
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     }}
                     title={filename}
                 >
@@ -294,7 +324,7 @@ export function FileAttachment({
             <button
                 onClick={handleClick}
                 className={cn(
-                    "group relative min-h-[54px] rounded-xl cursor-pointer",
+                    "group relative min-h-[54px] rounded-2xl cursor-pointer",
                     "border border-black/10 dark:border-white/10",
                     "bg-black/5 dark:bg-black/20",
                     "p-0 overflow-hidden", // No padding, content touches borders
@@ -304,25 +334,34 @@ export function FileAttachment({
                 )}
                 style={{
                     maxWidth: "100%", // Ensure doesn't exceed container width
+<<<<<<< HEAD
                     height: isGridLayout ? imageHeight : 'auto',
+                    ...(customStyle || {})
+=======
+                    height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
+                    maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
                     ...customStyle
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                 }}
                 title={filename}
             >
                 <img
-                    src={sandboxId && session?.access_token ? imageUrl : fileUrl}
+<<<<<<< HEAD
+                    src={sandboxId && session?.access_token ? (imageUrl || fileUrl) : fileUrl}
+=======
+                    src={sandboxId && session?.access_token ? imageUrl : (fileUrl || '')}
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     alt={filename}
                     className={cn(
-                        "max-h-full", // Respect parent height constraint
-                        isGridLayout ? "w-full h-full object-cover" : "w-auto" // Full width & height in grid with object-cover
+                        "max-h-full max-w-full", // Respect parent constraints
+                        isSingleItemGrid ? "object-contain" : isGridLayout ? "w-full h-full object-cover" : "w-auto"
                     )}
                     style={{
-                        height: imageHeight,
+                        height: isSingleItemGrid ? 'auto' : imageHeight,
                         objectPosition: "center",
-                        objectFit: isGridLayout ? "cover" : "contain"
+                        objectFit: isSingleItemGrid ? "contain" : isGridLayout ? "cover" : "contain"
                     }}
                     onLoad={() => {
-                        console.log("Image loaded successfully:", filename);
                     }}
                     onError={(e) => {
                         // Avoid logging the error for all instances of the same image
@@ -330,7 +369,7 @@ export function FileAttachment({
 
                         // Only log details in dev environments to avoid console spam
                         if (process.env.NODE_ENV === 'development') {
-                            const imgSrc = sandboxId && session?.access_token ? imageUrl : fileUrl;
+                            const imgSrc = sandboxId && session?.access_token ? (imageUrl || fileUrl) : fileUrl;
                             console.error('Image URL:', imgSrc);
 
                             // Additional debugging for blob URLs
@@ -360,7 +399,6 @@ export function FileAttachment({
                         setHasError(true);
                         // If the image failed to load and we have a localPreviewUrl that's a blob URL, try using it directly
                         if (localPreviewUrl && typeof localPreviewUrl === 'string' && localPreviewUrl.startsWith('blob:')) {
-                            console.log('Falling back to localPreviewUrl for:', filename);
                             (e.target as HTMLImageElement).src = localPreviewUrl;
                         }
                     }}
@@ -378,7 +416,7 @@ export function FileAttachment({
         'tsv': CsvRenderer
     };
 
-    // HTML/MD/CSV preview when not collapsed and in grid layout
+    // HTML/MD/CSV/PDF preview when not collapsed and in grid layout
     if (shouldShowPreview && isGridLayout) {
         // Determine the renderer component
         const Renderer = rendererMap[extension as keyof typeof rendererMap];
@@ -387,36 +425,54 @@ export function FileAttachment({
             <div
                 className={cn(
                     "group relative rounded-xl w-full",
-                    "border border-black/10 dark:border-white/10",
-                    "bg-black/5 dark:bg-black/20",
+                    "border",
+                    "bg-card",
                     "overflow-hidden",
-                    "h-[300px]", // Fixed height for previews
+                    isPdf ? "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[500px]  sm:!min-w-[300px]" : "h-[300px]",
                     "pt-10", // Room for header
                     className
                 )}
                 style={{
                     gridColumn: "1 / -1", // Make it take full width in grid
                     width: "100%",        // Ensure full width
+<<<<<<< HEAD
+                    ...(customStyle || {})
+=======
+                    minWidth: 0,          // Prevent flex shrinking issues
                     ...customStyle
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                 }}
                 onClick={hasError ? handleClick : undefined} // Make clickable if error
             >
                 {/* Content area */}
-                <div className="h-full w-full relative">
-                    {/* Only show content if we have it and no errors */}
-                    {!hasError && fileContent && (
+                <div
+                    className="h-full w-full relative"
+                    style={{
+                        minWidth: 0,
+                        width: '100%',
+                        containIntrinsicSize: isPdf ? '100% 500px' : undefined,
+                        contain: isPdf ? 'layout size' : undefined
+                    }}
+                >
+                    {/* Render PDF or text-based previews */}
+                    {!hasError && (
                         <>
-                            {Renderer ? (
+                            {isPdf && (() => {
+                                const pdfUrlForRender = localPreviewUrl || (sandboxId ? (pdfBlobUrl ?? null) : fileUrl);
+                                return pdfUrlForRender ? (
+                                    <PdfPreviewRenderer
+                                        url={pdfUrlForRender}
+                                        className="h-full w-full"
+                                    />
+                                ) : null;
+                            })()}
+                            {!isPdf && fileContent && Renderer && (
                                 <Renderer
                                     content={fileContent}
                                     previewUrl={fileUrl}
                                     className="h-full w-full"
                                     project={project}
                                 />
-                            ) : (
-                                <div className="p-4 text-muted-foreground">
-                                    No preview available for this file type
-                                </div>
                             )}
                         </>
                     )}
@@ -442,14 +498,20 @@ export function FileAttachment({
                     )}
 
                     {/* Loading state */}
-                    {fileContentLoading && (
+                    {fileContentLoading && !isPdf && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-background/50">
+                            <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                        </div>
+                    )}
+
+                    {isPdf && pdfLoading && !pdfBlobUrl && (
                         <div className="absolute inset-0 flex items-center justify-center bg-background/50">
                             <Loader2 className="h-6 w-6 text-primary animate-spin" />
                         </div>
                     )}
 
                     {/* Empty content state - show when not loading and no content yet */}
-                    {!fileContent && !fileContentLoading && !hasError && (
+                    {!isPdf && !fileContent && !fileContentLoading && !hasError && (
                         <div className="h-full w-full flex flex-col items-center justify-center p-4 pointer-events-none">
                             <div className="text-muted-foreground text-sm mb-2">
                                 Preview available
@@ -462,12 +524,12 @@ export function FileAttachment({
                 </div>
 
                 {/* Header with filename */}
-                <div className="absolute top-0 left-0 right-0 bg-black/5 dark:bg-white/5 p-2 z-10 flex items-center justify-between">
+                <div className="absolute top-0 left-0 right-0 bg-accent p-2 z-10 flex items-center justify-between">
                     <div className="text-sm font-medium truncate">{filename}</div>
                     {onClick && (
                         <button
                             onClick={handleClick}
-                            className="p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                            className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
                         >
                             <ExternalLink size={14} />
                         </button>
@@ -478,9 +540,9 @@ export function FileAttachment({
     }
 
     // Regular files with details
-    const safeStyle = { ...customStyle };
+    const safeStyle = { ...(customStyle || {}) };
     delete safeStyle.height;
-    delete safeStyle['--attachment-height'];
+    delete (safeStyle as any)['--attachment-height'];
 
     return (
         <button
@@ -553,4 +615,4 @@ export function FileAttachmentGrid({
             project={project}
         />
     );
-} 
+}

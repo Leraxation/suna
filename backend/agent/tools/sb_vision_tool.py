@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
 from urllib.parse import urlparse
-from agentpress.tool import ToolResult, openapi_schema, xml_schema
+from agentpress.tool import ToolResult, openapi_schema, usage_example
 from sandbox.tool_base import SandboxToolsBase
 from agentpress.thread_manager import ThreadManager
 import json
@@ -156,12 +156,7 @@ class SandboxVisionTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="see-image",
-        mappings=[
-            {"param_name": "file_path", "node_type": "attribute", "path": "."}
-        ],
-        example='''
+    @usage_example('''
         <!-- Example: Request to see a local image named 'diagram.png' inside the 'docs' folder -->
         <function_calls>
         <invoke name="see_image">
@@ -175,8 +170,7 @@ class SandboxVisionTool(SandboxToolsBase):
         <parameter name="file_path">https://example.com/image.jpg</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def see_image(self, file_path: str) -> ToolResult:
         """Reads an image file from local file system or from a URL, compresses it, converts it to base64, and adds it as a temporary message."""
         try:
@@ -198,7 +192,7 @@ class SandboxVisionTool(SandboxToolsBase):
 
                 # Check if file exists and get info
                 try:
-                    file_info = self.sandbox.fs.get_file_info(full_path)
+                    file_info = await self.sandbox.fs.get_file_info(full_path)
                     if file_info.is_dir:
                         return self.fail_response(f"Path '{cleaned_path}' is a directory, not an image file.")
                 except Exception as e:
@@ -210,7 +204,7 @@ class SandboxVisionTool(SandboxToolsBase):
 
                 # Read image file content
                 try:
-                    image_bytes = self.sandbox.fs.download_file(full_path)
+                    image_bytes = await self.sandbox.fs.download_file(full_path)
                 except Exception as e:
                     return self.fail_response(f"Could not read image file: {cleaned_path}")
 

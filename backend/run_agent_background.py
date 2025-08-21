@@ -1,5 +1,12 @@
-import dotenv
+import dotenv # type: ignore
 dotenv.load_dotenv(".env")
+
+# --- THIS IS OUR FIX ---
+# We add a 30-second delay right after loading the environment
+# to give the backend time to create the RabbitMQ queue.
+import time
+time.sleep(30)
+# --- END OF FIX ---
 
 import sentry
 import asyncio
@@ -10,36 +17,44 @@ from typing import Optional
 from services import redis
 from agent.run import run_agent
 from utils.logger import logger, structlog
-import dramatiq
+import dramatiq # type: ignore
 import uuid
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
 from services import redis
-from dramatiq.brokers.rabbitmq import RabbitmqBroker
+<<<<<<< HEAD
+from dramatiq.brokers.rabbitmq import RabbitmqBroker # type: ignore
 import os
 from services.langfuse import langfuse
 from utils.retry import retry
 from workflows.executor import WorkflowExecutor
 from workflows.deterministic_executor import DeterministicWorkflowExecutor
 from workflows.models import WorkflowDefinition
+import sentry_sdk # type: ignore
+=======
+from dramatiq.brokers.redis import RedisBroker
+import os
+from services.langfuse import langfuse
+from utils.retry import retry
+
 import sentry_sdk
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 from typing import Dict, Any
 
-rabbitmq_host = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-rabbitmq_port = int(os.getenv('RABBITMQ_PORT', 5672))
-rabbitmq_broker = RabbitmqBroker(host=rabbitmq_host, port=rabbitmq_port, middleware=[dramatiq.middleware.AsyncIO()])
-dramatiq.set_broker(rabbitmq_broker)
+redis_host = os.getenv('REDIS_HOST', 'redis')
+redis_port = int(os.getenv('REDIS_PORT', 6379))
+redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
+
+dramatiq.set_broker(redis_broker)
 
 
 _initialized = False
 db = DBConnection()
-workflow_executor = WorkflowExecutor(db)
-deterministic_executor = DeterministicWorkflowExecutor(db)
 instance_id = "single"
 
 async def initialize():
     """Initialize the agent API with resources from the main API."""
-    global db, instance_id, _initialized, workflow_executor, deterministic_executor
+    global db, instance_id, _initialized
 
     if not instance_id:
         instance_id = str(uuid.uuid4())[:8]
@@ -47,7 +62,7 @@ async def initialize():
     await db.initialize()
 
     _initialized = True
-    logger.info(f"Initialized agent API with instance ID: {instance_id}")
+    logger.debug(f"Initialized agent API with instance ID: {instance_id}")
 
 @dramatiq.actor
 async def check_health(key: str):
@@ -73,7 +88,6 @@ async def run_agent_background(
 ):
     """Run the agent in the background using Redis for state."""
     structlog.contextvars.clear_contextvars()
-
     structlog.contextvars.bind_contextvars(
         agent_run_id=agent_run_id,
         thread_id=thread_id,
@@ -96,19 +110,19 @@ async def run_agent_background(
         # Check if the run is already being handled by another instance
         existing_instance = await redis.get(run_lock_key)
         if existing_instance:
-            logger.info(f"Agent run {agent_run_id} is already being processed by instance {existing_instance.decode() if isinstance(existing_instance, bytes) else existing_instance}. Skipping duplicate execution.")
+            logger.debug(f"Agent run {agent_run_id} is already being processed by instance {existing_instance.decode() if isinstance(existing_instance, bytes) else existing_instance}. Skipping duplicate execution.")
             return
         else:
             # Lock exists but no value, try to acquire again
             lock_acquired = await redis.set(run_lock_key, instance_id, nx=True, ex=redis.REDIS_KEY_TTL)
             if not lock_acquired:
-                logger.info(f"Agent run {agent_run_id} is already being processed by another instance. Skipping duplicate execution.")
+                logger.debug(f"Agent run {agent_run_id} is already being processed by another instance. Skipping duplicate execution.")
                 return
 
     sentry.sentry.set_tag("thread_id", thread_id)
 
-    logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
-    logger.info({
+    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
+    logger.debug({
         "model_name": model_name,
         "enable_thinking": enable_thinking,
         "reasoning_effort": reasoning_effort,
@@ -118,9 +132,25 @@ async def run_agent_background(
         "is_agent_builder": is_agent_builder,
         "target_agent_id": target_agent_id,
     })
-    logger.info(f"🚀 Using model: {model_name} (thinking: {enable_thinking}, reasoning_effort: {reasoning_effort})")
+    
+    effective_model = model_name
+    if model_name == "openai/gpt-5-mini" and agent_config and agent_config.get('model'):
+        agent_model = agent_config['model']
+        from utils.constants import MODEL_NAME_ALIASES
+        resolved_agent_model = MODEL_NAME_ALIASES.get(agent_model, agent_model)
+        effective_model = resolved_agent_model
+        logger.debug(f"Using model from agent config: {agent_model} -> {effective_model} (no user selection)")
+    else:
+        from utils.constants import MODEL_NAME_ALIASES
+        effective_model = MODEL_NAME_ALIASES.get(model_name, model_name)
+        if model_name != "openai/gpt-5-mini":
+            logger.debug(f"Using user-selected model: {model_name} -> {effective_model}")
+        else:
+            logger.debug(f"Using default model: {effective_model}")
+    
+    logger.debug(f"🚀 Using model: {effective_model} (thinking: {enable_thinking}, reasoning_effort: {reasoning_effort})")
     if agent_config:
-        logger.info(f"Using custom agent: {agent_config.get('name', 'Unknown')}")
+        logger.debug(f"Using custom agent: {agent_config.get('name', 'Unknown')}")
 
     client = await db.client
     start_time = datetime.now(timezone.utc)
@@ -146,7 +176,7 @@ async def run_agent_background(
                     data = message.get("data")
                     if isinstance(data, bytes): data = data.decode('utf-8')
                     if data == "STOP":
-                        logger.info(f"Received STOP signal for agent run {agent_run_id} (Instance: {instance_id})")
+                        logger.debug(f"Received STOP signal for agent run {agent_run_id} (Instance: {instance_id})")
                         stop_signal_received = True
                         break
                 # Periodically refresh the active run key TTL
@@ -155,7 +185,7 @@ async def run_agent_background(
                     except Exception as ttl_err: logger.warning(f"Failed to refresh TTL for {instance_active_key}: {ttl_err}")
                 await asyncio.sleep(0.1) # Short sleep to prevent tight loop
         except asyncio.CancelledError:
-            logger.info(f"Stop signal checker cancelled for {agent_run_id} (Instance: {instance_id})")
+            logger.debug(f"Stop signal checker cancelled for {agent_run_id} (Instance: {instance_id})")
         except Exception as e:
             logger.error(f"Error in stop signal checker for {agent_run_id}: {e}", exc_info=True)
             stop_signal_received = True # Stop the run if the checker fails
@@ -180,7 +210,7 @@ async def run_agent_background(
         # Initialize agent generator
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id, stream=stream,
-            model_name=model_name,
+            model_name=effective_model,
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
             enable_context_manager=enable_context_manager,
             agent_config=agent_config,
@@ -196,7 +226,7 @@ async def run_agent_background(
 
         async for response in agent_gen:
             if stop_signal_received:
-                logger.info(f"Agent run {agent_run_id} stopped by signal.")
+                logger.debug(f"Agent run {agent_run_id} stopped by signal.")
                 final_status = "stopped"
                 trace.span(name="agent_run_stopped").end(status_message="agent_run_stopped", level="WARNING")
                 break
@@ -211,7 +241,7 @@ async def run_agent_background(
             if response.get('type') == 'status':
                  status_val = response.get('status')
                  if status_val in ['completed', 'failed', 'stopped']:
-                     logger.info(f"Agent run {agent_run_id} finished via status message: {status_val}")
+                     logger.debug(f"Agent run {agent_run_id} finished via status message: {status_val}")
                      final_status = status_val
                      if status_val == 'failed' or status_val == 'stopped':
                          error_message = response.get('message', f"Run ended with status: {status_val}")
@@ -221,7 +251,7 @@ async def run_agent_background(
         if final_status == "running":
              final_status = "completed"
              duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-             logger.info(f"Agent run {agent_run_id} completed normally (duration: {duration:.2f}s, responses: {total_responses})")
+             logger.debug(f"Agent run {agent_run_id} completed normally (duration: {duration:.2f}s, responses: {total_responses})")
              completion_message = {"type": "status", "status": "completed", "message": "Agent run completed successfully"}
              trace.span(name="agent_run_completed").end(status_message="agent_run_completed")
              await redis.rpush(response_list_key, json.dumps(completion_message))
@@ -232,7 +262,7 @@ async def run_agent_background(
         all_responses = [json.loads(r) for r in all_responses_json]
 
         # Update DB status
-        await update_agent_run_status(client, agent_run_id, final_status, error=error_message, responses=all_responses)
+        await update_agent_run_status(client, agent_run_id, final_status, error=error_message)
 
         # Publish final control signal (END_STREAM or ERROR)
         control_signal = "END_STREAM" if final_status == "completed" else "ERROR" if final_status == "failed" else "STOP"
@@ -269,7 +299,7 @@ async def run_agent_background(
              all_responses = [error_response] # Use the error message we tried to push
 
         # Update DB status
-        await update_agent_run_status(client, agent_run_id, "failed", error=f"{error_message}\n{traceback_str}", responses=all_responses)
+        await update_agent_run_status(client, agent_run_id, "failed", error=f"{error_message}\n{traceback_str}")
 
         # Publish ERROR signal
         try:
@@ -310,7 +340,7 @@ async def run_agent_background(
         except asyncio.TimeoutError:
             logger.warning(f"Timeout waiting for pending Redis operations for {agent_run_id}")
 
-        logger.info(f"Agent run background task fully completed for: {agent_run_id} (Instance: {instance_id}) with final status: {final_status}")
+        logger.debug(f"Agent run background task fully completed for: {agent_run_id} (Instance: {instance_id}) with final status: {final_status}")
 
 async def _cleanup_redis_instance_key(agent_run_id: str):
     """Clean up the instance-specific Redis key for an agent run."""
@@ -352,7 +382,6 @@ async def update_agent_run_status(
     agent_run_id: str,
     status: str,
     error: Optional[str] = None,
-    responses: Optional[list[any]] = None # Expects parsed list of dicts
 ) -> bool:
     """
     Centralized function to update agent run status.
@@ -367,9 +396,7 @@ async def update_agent_run_status(
         if error:
             update_data["error"] = error
 
-        if responses:
-            # Ensure responses are stored correctly as JSONB
-            update_data["responses"] = responses
+
 
         # Retry up to 3 times
         for retry in range(3):
@@ -377,14 +404,14 @@ async def update_agent_run_status(
                 update_result = await client.table('agent_runs').update(update_data).eq("id", agent_run_id).execute()
 
                 if hasattr(update_result, 'data') and update_result.data:
-                    logger.info(f"Successfully updated agent run {agent_run_id} status to '{status}' (retry {retry})")
+                    logger.debug(f"Successfully updated agent run {agent_run_id} status to '{status}' (retry {retry})")
 
                     # Verify the update
                     verify_result = await client.table('agent_runs').select('status', 'completed_at').eq("id", agent_run_id).execute()
                     if verify_result.data:
                         actual_status = verify_result.data[0].get('status')
                         completed_at = verify_result.data[0].get('completed_at')
-                        logger.info(f"Verified agent run update: status={actual_status}, completed_at={completed_at}")
+                        logger.debug(f"Verified agent run update: status={actual_status}, completed_at={completed_at}")
                     return True
                 else:
                     logger.warning(f"Database update returned no data for agent run {agent_run_id} on retry {retry}: {update_result}")
@@ -403,231 +430,3 @@ async def update_agent_run_status(
         return False
 
     return False
-
-@dramatiq.actor
-async def run_workflow_background(
-    execution_id: str,
-    workflow_id: str,
-    workflow_name: str,
-    workflow_definition: Dict[str, Any],
-    variables: Optional[Dict[str, Any]] = None,
-    triggered_by: str = "MANUAL",
-    project_id: Optional[str] = None,
-    thread_id: Optional[str] = None,
-    agent_run_id: Optional[str] = None,
-    deterministic: bool = True
-):
-    """Run a workflow in the background using Dramatiq."""
-    try:
-        await initialize()
-    except Exception as e:
-        logger.critical(f"Failed to initialize workflow worker: {e}")
-        raise e
-
-    run_lock_key = f"workflow_run_lock:{execution_id}"
-    
-    lock_acquired = await redis.set(run_lock_key, instance_id, nx=True, ex=redis.REDIS_KEY_TTL)
-    
-    if not lock_acquired:
-        existing_instance = await redis.get(run_lock_key)
-        if existing_instance:
-            logger.info(f"Workflow execution {execution_id} is already being processed by instance {existing_instance.decode() if isinstance(existing_instance, bytes) else existing_instance}. Skipping duplicate execution.")
-            return
-        else:
-            lock_acquired = await redis.set(run_lock_key, instance_id, nx=True, ex=redis.REDIS_KEY_TTL)
-            if not lock_acquired:
-                logger.info(f"Workflow execution {execution_id} is already being processed by another instance. Skipping duplicate execution.")
-                return
-
-    sentry_sdk.set_tag("workflow_id", workflow_id)
-    sentry_sdk.set_tag("execution_id", execution_id)
-
-    logger.info(f"Starting background workflow execution: {execution_id} for workflow: {workflow_name} (Instance: {instance_id})")
-    logger.info(f"🔄 Triggered by: {triggered_by}")
-
-    client = await db.client
-    start_time = datetime.now(timezone.utc)
-    total_responses = 0
-    pubsub = None
-    stop_checker = None
-    stop_signal_received = False
-
-    # Define Redis keys and channels - use agent_run pattern if agent_run_id provided for frontend compatibility
-    if agent_run_id:
-        response_list_key = f"agent_run:{agent_run_id}:responses"
-        response_channel = f"agent_run:{agent_run_id}:new_response"
-        instance_control_channel = f"agent_run:{agent_run_id}:control:{instance_id}"
-        global_control_channel = f"agent_run:{agent_run_id}:control"
-        instance_active_key = f"active_run:{instance_id}:{agent_run_id}"
-    else:
-        # Fallback to workflow execution pattern
-        response_list_key = f"workflow_execution:{execution_id}:responses"
-        response_channel = f"workflow_execution:{execution_id}:new_response"
-        instance_control_channel = f"workflow_execution:{execution_id}:control:{instance_id}"
-        global_control_channel = f"workflow_execution:{execution_id}:control"
-        instance_active_key = f"active_workflow:{instance_id}:{execution_id}"
-
-    async def check_for_stop_signal():
-        nonlocal stop_signal_received
-        if not pubsub: return
-        try:
-            while not stop_signal_received:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.5)
-                if message and message.get("type") == "message":
-                    data = message.get("data")
-                    if isinstance(data, bytes): data = data.decode('utf-8')
-                    if data == "STOP":
-                        logger.info(f"Received STOP signal for workflow execution {execution_id} (Instance: {instance_id})")
-                        stop_signal_received = True
-                        break
-                if total_responses % 50 == 0:
-                    try: await redis.expire(instance_active_key, redis.REDIS_KEY_TTL)
-                    except Exception as ttl_err: logger.warning(f"Failed to refresh TTL for {instance_active_key}: {ttl_err}")
-                await asyncio.sleep(0.1)
-        except asyncio.CancelledError:
-            logger.info(f"Stop signal checker cancelled for {execution_id} (Instance: {instance_id})")
-        except Exception as e:
-            logger.error(f"Error in stop signal checker for {execution_id}: {e}", exc_info=True)
-            stop_signal_received = True
-
-    try:
-        pubsub = await redis.create_pubsub()
-        try:
-            await retry(lambda: pubsub.subscribe(instance_control_channel, global_control_channel))
-        except Exception as e:
-            logger.error(f"Redis failed to subscribe to control channels: {e}", exc_info=True)
-            raise e
-
-        logger.debug(f"Subscribed to control channels: {instance_control_channel}, {global_control_channel}")
-        stop_checker = asyncio.create_task(check_for_stop_signal())
-        await redis.set(instance_active_key, "running", ex=redis.REDIS_KEY_TTL)
-
-        await client.table('workflow_executions').update({
-            "status": "running",
-            "started_at": start_time.isoformat()
-        }).eq('id', execution_id).execute()
-
-        workflow = WorkflowDefinition(**workflow_definition)
-        
-        if not thread_id:
-            thread_id = str(uuid.uuid4())
-
-        final_status = "running"
-        error_message = None
-        pending_redis_operations = []
-
-        if deterministic:
-            executor = deterministic_executor
-            logger.info(f"Using deterministic executor for workflow {execution_id}")
-        else:
-            executor = workflow_executor
-            logger.info(f"Using legacy executor for workflow {execution_id}")
-        
-        async for response in executor.execute_workflow(
-            workflow=workflow,
-            variables=variables,
-            thread_id=thread_id,
-            project_id=project_id
-        ):
-            if stop_signal_received:
-                logger.info(f"Workflow execution {execution_id} stopped by signal.")
-                final_status = "stopped"
-                break
-
-            response_json = json.dumps(response)
-            pending_redis_operations.append(asyncio.create_task(redis.rpush(response_list_key, response_json)))
-            pending_redis_operations.append(asyncio.create_task(redis.publish(response_channel, "new")))
-            total_responses += 1
-
-            if response.get('type') == 'workflow_status':
-                status_val = response.get('status')
-                if status_val in ['completed', 'failed', 'stopped']:
-                    logger.info(f"Workflow execution {execution_id} finished via status message: {status_val}")
-                    final_status = status_val
-                    if status_val == 'failed' or status_val == 'stopped':
-                        error_message = response.get('error', f"Workflow ended with status: {status_val}")
-                    break
-
-        if final_status == "running":
-            final_status = "completed"
-            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-            logger.info(f"Workflow execution {execution_id} completed normally (duration: {duration:.2f}s, responses: {total_responses})")
-            completion_message = {"type": "workflow_status", "status": "completed", "message": "Workflow execution completed successfully"}
-            await redis.rpush(response_list_key, json.dumps(completion_message))
-            await redis.publish(response_channel, "new")
-
-        await update_workflow_execution_status(client, execution_id, final_status, error=error_message, agent_run_id=agent_run_id)
-
-        control_signal = "END_STREAM" if final_status == "completed" else "ERROR" if final_status == "failed" else "STOP"
-        try:
-            await redis.publish(global_control_channel, control_signal)
-            logger.debug(f"Published final control signal '{control_signal}' to {global_control_channel}")
-        except Exception as e:
-            logger.warning(f"Failed to publish final control signal {control_signal}: {str(e)}")
-
-    except Exception as e:
-        error_message = str(e)
-        traceback_str = traceback.format_exc()
-        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-        logger.error(f"Error in workflow execution {execution_id} after {duration:.2f}s: {error_message}\n{traceback_str} (Instance: {instance_id})")
-        final_status = "failed"
-
-        error_response = {"type": "workflow_status", "status": "error", "message": error_message}
-        try:
-            await redis.rpush(response_list_key, json.dumps(error_response))
-            await redis.publish(response_channel, "new")
-        except Exception as redis_err:
-            logger.error(f"Failed to push error response to Redis for {execution_id}: {redis_err}")
-
-        await update_workflow_execution_status(client, execution_id, "failed", error=f"{error_message}\n{traceback_str}", agent_run_id=agent_run_id)
-        try:
-            await redis.publish(global_control_channel, "ERROR")
-            logger.debug(f"Published ERROR signal to {global_control_channel}")
-        except Exception as e:
-            logger.warning(f"Failed to publish ERROR signal: {str(e)}")
-
-    finally:
-        if stop_checker and not stop_checker.done():
-            stop_checker.cancel()
-            try: await stop_checker
-            except asyncio.CancelledError: pass
-            except Exception as e: logger.warning(f"Error during stop_checker cancellation: {e}")
-
-        if pubsub:
-            try:
-                await pubsub.unsubscribe()
-                await pubsub.close()
-                logger.debug(f"Closed pubsub connection for {execution_id}")
-            except Exception as e:
-                logger.warning(f"Error closing pubsub for {execution_id}: {str(e)}")
-
-        await _cleanup_redis_response_list(agent_run_id)
-        await _cleanup_redis_instance_key(agent_run_id)
-        await _cleanup_redis_run_lock(agent_run_id)
-
-        try:
-            await asyncio.wait_for(asyncio.gather(*pending_redis_operations), timeout=30.0)
-        except asyncio.TimeoutError:
-            logger.warning(f"Timeout waiting for pending Redis operations for {execution_id}")
-
-        logger.info(f"Workflow execution background task fully completed for: {execution_id} (Instance: {instance_id}) with final status: {final_status}")
-
-
-async def update_workflow_execution_status(client, execution_id: str, status: str, error: Optional[str] = None, agent_run_id: Optional[str] = None):
-    """Update workflow execution status in database."""
-    try:
-        update_data = {
-            "status": status,
-            "completed_at": datetime.now(timezone.utc).isoformat() if status in ['completed', 'failed', 'stopped'] else None,
-            "error": error
-        }
-        
-        await client.table('workflow_executions').update(update_data).eq('id', execution_id).execute()
-        logger.info(f"Updated workflow execution {execution_id} status to {status}")
-        
-        if agent_run_id:
-            await client.table('agent_runs').update(update_data).eq('id', agent_run_id).execute()
-            logger.info(f"Updated agent run {agent_run_id} status to {status}")
-        
-    except Exception as e:
-        logger.error(f"Failed to update workflow execution status: {e}")

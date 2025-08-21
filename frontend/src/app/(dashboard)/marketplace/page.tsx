@@ -632,7 +632,7 @@ export default function MarketplacePage() {
         const item: MarketplaceTemplate = {
           id: template.template_id,
           name: template.name,
-          description: template.description,
+          description: template.description || '',
           tags: template.tags || [],
           download_count: template.download_count || 0,
           creator_name: template.creator_name || 'Anonymous',

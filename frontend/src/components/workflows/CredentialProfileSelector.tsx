@@ -10,7 +10,7 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -19,13 +19,10 @@ import {
   Plus, 
   Settings, 
   Star, 
-  Clock,
-  CheckCircle,
   AlertCircle,
   Key,
   Shield,
-  Loader2,
-  ExternalLink
+  Loader2
 } from 'lucide-react';
 import { 
   useCredentialProfilesForMcp, 
@@ -72,7 +69,10 @@ const InlineCreateProfileDialog: React.FC<InlineCreateProfileDialogProps> = ({
     is_default: false
   });
 
-  const { data: serverDetails, isLoading: isLoadingDetails } = useMCPServerDetails(mcpQualifiedName);
+  const { data: serverDetails, isLoading: isLoadingDetails } = useMCPServerDetails(
+    mcpQualifiedName,
+    !mcpQualifiedName?.startsWith('composio.')
+  );
   const createProfileMutation = useCreateCredentialProfile();
 
   const getConfigProperties = () => {

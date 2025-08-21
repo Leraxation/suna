@@ -1,0 +1,19 @@
+[build]
+# Use Dockerfile for building instead of auto-detection
+builder = "nixpacks"
+buildCommand = "docker build -t suna-backend ."
+
+[deploy]
+# Start command for the FastAPI application
+startCommand = "python simple_server.py"
+
+# Health check configuration
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+# Environment configuration
+[env]
+PORT = "8000"
+ENV_MODE = "production"
+PYTHONPATH = "/app"
+WORKERS = "8"

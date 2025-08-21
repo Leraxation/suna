@@ -34,18 +34,32 @@ const extractFromNewFormat = (content: any): CommandData => {
     const toolExecution = parsedContent.tool_execution;
     const args = toolExecution.arguments || {};
     
-    let parsedOutput = toolExecution.result?.output;
-    if (typeof parsedOutput === 'string') {
+    // Handle the case where result.output is a string (like in your example)
+    let output = toolExecution.result?.output;
+    let parsedOutput: any = {};
+    
+    if (typeof output === 'string') {
+      // First try to parse it as JSON
       try {
-        parsedOutput = JSON.parse(parsedOutput);
+        parsedOutput = JSON.parse(output);
+        // If parsing succeeds, extract the actual output from the nested structure
+        if (parsedOutput && typeof parsedOutput === 'object') {
+          // Look for output in common nested structures
+          output = parsedOutput.output || parsedOutput.message || parsedOutput.content || output;
+        }
       } catch (e) {
+        // If it's not JSON, treat it as plain text output
+        output = output;
       }
+    } else if (typeof output === 'object' && output !== null) {
+      parsedOutput = output;
+      // Extract output from object structure
+      output = (output as any).output || (output as any).message || (output as any).content || null;
     }
-    parsedOutput = parsedOutput || {};
 
     const extractedData = {
       command: args.command || null,
-      output: parsedOutput?.output || null,
+      output: output || parsedOutput?.output || null,
       exitCode: parsedOutput?.exit_code || null,
       sessionName: args.session_name || parsedOutput?.session_name || null,
       cwd: parsedOutput?.cwd || null,
@@ -54,14 +68,6 @@ const extractFromNewFormat = (content: any): CommandData => {
       timestamp: toolExecution.execution_details?.timestamp
     };
 
-    console.log('CommandToolView: Extracted from new format:', {
-      command: extractedData.command,
-      hasOutput: !!extractedData.output,
-      exitCode: extractedData.exitCode,
-      sessionName: extractedData.sessionName,
-      success: extractedData.success
-    });
-    
     return extractedData;
   }
 
@@ -79,11 +85,6 @@ const extractFromLegacyFormat = (content: any): Omit<CommandData, 'success' | 't
   if (toolData.toolResult) {
     const args = toolData.arguments || {};
     
-    console.log('CommandToolView: Extracted from legacy format (extractToolData):', {
-      command: toolData.command || args.command,
-      hasOutput: !!toolData.toolResult.toolOutput
-    });
-    
     return {
       command: toolData.command || args.command || null,
       output: toolData.toolResult.toolOutput || null,
@@ -95,10 +96,6 @@ const extractFromLegacyFormat = (content: any): Omit<CommandData, 'success' | 't
   }
 
   const legacyCommand = extractCommand(content);
-  
-  console.log('CommandToolView: Extracted from legacy format (fallback):', {
-    command: legacyCommand
-  });
   
   return {
     command: legacyCommand,
@@ -140,19 +137,6 @@ export function extractCommandData(
   const assistantNewFormat = extractFromNewFormat(assistantContent);
   const toolNewFormat = extractFromNewFormat(toolContent);
 
-  console.log('CommandToolView: Format detection results:', {
-    assistantNewFormat: {
-      hasCommand: !!assistantNewFormat.command,
-      hasOutput: !!assistantNewFormat.output,
-      sessionName: assistantNewFormat.sessionName
-    },
-    toolNewFormat: {
-      hasCommand: !!toolNewFormat.command,
-      hasOutput: !!toolNewFormat.output,
-      sessionName: toolNewFormat.sessionName
-    }
-  });
-
   if (assistantNewFormat.command || assistantNewFormat.output) {
     command = assistantNewFormat.command;
     output = assistantNewFormat.output;
@@ -166,7 +150,6 @@ export function extractCommandData(
     if (assistantNewFormat.timestamp) {
       actualAssistantTimestamp = assistantNewFormat.timestamp;
     }
-    console.log('CommandToolView: Using assistant new format data');
   } else if (toolNewFormat.command || toolNewFormat.output) {
     command = toolNewFormat.command;
     output = toolNewFormat.output;
@@ -180,7 +163,6 @@ export function extractCommandData(
     if (toolNewFormat.timestamp) {
       actualToolTimestamp = toolNewFormat.timestamp;
     }
-    console.log('CommandToolView: Using tool new format data');
   } else {
     const assistantLegacy = extractFromLegacyFormat(assistantContent);
     const toolLegacy = extractFromLegacyFormat(toolContent);
@@ -188,12 +170,6 @@ export function extractCommandData(
     command = assistantLegacy.command || toolLegacy.command;
     output = assistantLegacy.output || toolLegacy.output;
     sessionName = assistantLegacy.sessionName || toolLegacy.sessionName;
-    
-    console.log('CommandToolView: Using legacy format data:', {
-      command,
-      hasOutput: !!output,
-      sessionName
-    });
   }
 
   if (!command) {

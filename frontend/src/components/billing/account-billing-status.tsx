@@ -80,7 +80,7 @@ export default function AccountBillingStatus({ accountId, returnUrl }: Props) {
         <div className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-lg text-center">
           <p className="text-sm text-destructive">
             Error loading billing status:{' '}
-            {error || subscriptionQueryError.message}
+            {error || subscriptionQueryError?.message || 'Unknown error'}
           </p>
         </div>
       </div>
@@ -165,8 +165,7 @@ export default function AccountBillingStatus({ accountId, returnUrl }: Props) {
                   Agent Usage This Month
                 </span>
                 <span className="text-sm font-medium text-card-title">
-                  ${subscriptionData?.current_usage?.toFixed(2) || '0'} /{' '}
-                  ${subscriptionData?.cost_limit || '0'}
+                  $0 / $0
                 </span>
               </div>
             </div>

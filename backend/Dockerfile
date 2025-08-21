@@ -1,44 +1,70 @@
-FROM ghcr.io/astral-sh/uv:python3.11-alpine
+FROM python:3.10-slim
 
 ENV ENV_MODE production
 WORKDIR /app
 
-RUN apk add --no-cache curl
+<<<<<<< HEAD
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    pandoc \
+    && rm -rf /var/lib/apt/lists/*
+=======
+RUN apk add --no-cache curl git
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
-# Install Python dependencies
-COPY pyproject.toml uv.lock ./
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Create virtual environment
+RUN uv venv /app/.venv
+
+# Copy dependencies file
+COPY pyproject.toml ./
+
+# Install dependencies but exclude problematic asyncio packages
 ENV UV_LINK_MODE=copy
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --quiet
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --quiet
+
+# Remove the problematic asyncio packages after installation
+RUN uv pip uninstall pytest-asyncio nest-asyncio daytona-api-client-async -y || echo "Some packages not found"
+
+# Remove any asyncio package that might have been installed
+RUN uv pip uninstall asyncio -y || echo "asyncio package not found"
+
+# Remove asyncio directories completely
+RUN rm -rf /app/.venv/lib/python3.10/site-packages/asyncio* || echo "No asyncio directories found"
+RUN rm -rf /app/.venv/lib/python3.10/site-packages/nest_asyncio* || echo "No nest_asyncio directories found"
+
+# Install hypercorn as an alternative to uvicorn
+RUN uv pip install hypercorn
+
+# Verify we're using system asyncio
+RUN uv run python -c "import asyncio; print('Using asyncio from:', asyncio.__file__)"
 
 # Copy application code
 COPY . .
 
+<<<<<<< HEAD
+# Set environment variables for virtual environment
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ENV PYTHONPATH="/app/.venv/lib/python3.10/site-packages:/app"
+=======
 # Calculate optimal worker count based on 16 vCPUs
 # Using (2*CPU)+1 formula for CPU-bound applications
-ENV WORKERS=33
+ENV WORKERS=7
 ENV THREADS=2
 ENV WORKER_CONNECTIONS=2000
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
-ENV PYTHONPATH=/app
+# Calculate optimal worker count based on 16 vCPUs
+ENV WORKERS=8
 EXPOSE 8000
 
-# Gunicorn configuration
-CMD ["sh", "-c", "uv run gunicorn api:app \
-  --workers $WORKERS \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000 \
-  --timeout 1800 \
-  --graceful-timeout 600 \
-  --keep-alive 1800 \
-  --max-requests 0 \
-  --max-requests-jitter 0 \
-  --forwarded-allow-ips '*' \
-  --worker-connections $WORKER_CONNECTIONS \
-  --worker-tmp-dir /dev/shm \
-  --preload \
-  --log-level info \
-  --access-logfile - \
-  --error-logfile - \
-  --capture-output \
-  --enable-stdio-inheritance \
-  --threads $THREADS"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the full FastAPI application with direct server
+CMD ["python", "simple_server.py"]

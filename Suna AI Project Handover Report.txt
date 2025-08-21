@@ -1,0 +1,32 @@
+Suna AI Project Handover Report
+Project: Suna-Ai-latest
+Date: July 7, 2025
+1. Overall System Status: STABLE BUT FLAWED
+The Suna AI application is now in a stable, running state.
+We have successfully overcome the initial, critical startup failures by implementing a manual code modification.
+Core Issue Resolved: The startup race condition that caused the no queue 'default.DQ' error has been fixed by adding a time.sleep(30) delay to the run_agent_background.py script. This ensures the backend has time to initialize before the worker starts.
+Cloud Services: All required cloud services (Supabase, Daytona, LLMs, QStash) are correctly configured with the necessary API keys in the backend/.env file. The agent can successfully connect to these services.
+2. Current Capabilities:
+Stable Startup: The application starts reliably using the docker compose up --build command.
+Agent Execution: Suna can successfully initiate agent runs, process user prompts, and use its default set of tools.
+Cloud Sandbox: Daytona integration is working. Suna can create and use cloud sandboxes to perform tasks.
+LLM Integration: LLM API calls (e.g., to Anthropic's Claude) are working, though they are subject to the rate limits of your free-tier account.
+Core Toolset: The default tools for web search (web_search), file creation (create_file), and command execution (execute_command) are functional.
+3. Known Issues & Limitations:
+LLM Rate Limiting: The primary operational bottleneck is the API rate limit of the cloud LLM provider (Anthropic). Complex tasks that require many iterations or large context windows will fail with a RateLimitError.
+Mitigation: We have identified that switching the MODEL_TO_USE in the .env file to a more cost-effective or less restrictive model (like openai/gpt-4o-mini) is the recommended next step to address this.
+Lack of Synthesis/Formatting: The agent's core logic is good at executing a sequence of commands but struggles to independently synthesize the results into a final, polished document (like a PDF, presentation, or complex webpage). It tends to stop after gathering the raw data.
+4. Pending Changes (Ready for Implementation):
+The following changes have been prepared to address the "Lack of Synthesis/Formatting" issue but have not yet been applied.
+Dockerfile Modification: The backend/Dockerfile is ready to be edited to install the pandoc document conversion utility.
+New Tool Created: A new tool file, backend/tools/file_converter.py, has been designed. It contains two functions:
+convert_markdown_to_pdf
+convert_markdown_to_html
+Tool Registry Update: The backend/agent/tool_registry.py file is ready to be edited to make Suna aware of the new FileConverterTool.
+5. Next Steps (As per our plan):
+You are currently at the point where you have the code and instructions to implement the Pandoc file conversion tool. The immediate next steps are:
+Apply the pending changes (edit Dockerfile, create file_converter.py, edit tool_registry.py).
+Rebuild and restart Suna using docker compose down --volumes followed by docker compose up --build.
+Test the new capability by asking Suna to first create a Markdown file and then convert it to a PDF.
+This will successfully upgrade your Suna instance, giving it the crucial ability to produce professionally formatted documents from its research.
+St

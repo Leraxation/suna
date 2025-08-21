@@ -1,150 +1,309 @@
 import os
 import json
-import re
-from uuid import uuid4
-from typing import Optional
+import asyncio
+import datetime
+from typing import Optional, Dict, List, Any, AsyncGenerator
+from dataclasses import dataclass
 
-# from agent.tools.message_tool import MessageTool
+<<<<<<< HEAD
+from agent.tools.file_converter import FileConverterTool
+=======
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 from agent.tools.message_tool import MessageTool
 from agent.tools.sb_deploy_tool import SandboxDeployTool
 from agent.tools.sb_expose_tool import SandboxExposeTool
+from tools.netlify_deploy_tool import NetlifyDeployTool
 from agent.tools.web_search_tool import SandboxWebSearchTool
 from dotenv import load_dotenv
 from utils.config import config
-from flags.flags import is_enabled
 from agent.agent_builder_prompt import get_agent_builder_prompt
 from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
-from agent.tools.sb_browser_tool import SandboxBrowserTool
 from agent.tools.data_providers_tool import DataProvidersTool
 from agent.tools.expand_msg_tool import ExpandMessageTool
 from agent.prompt import get_system_prompt
+
 from utils.logger import logger
 from utils.auth_utils import get_account_id_from_thread
 from services.billing import check_billing_status
 from agent.tools.sb_vision_tool import SandboxVisionTool
+<<<<<<< HEAD
+from agent.tools.ai_enhancement_tool import AIEnhancementTool
+from agent.tools.data_processing_tool import DataProcessingTool
+from agent.tools.integration_tool import IntegrationTool
+from agent.tools.storage_security_tool import StorageSecurityTool
+from agent.tools.monitoring_maintenance_tool import MonitoringMaintenanceTool
+from agent.tools.cognitive_capabilities_tool import CognitiveCapabilitiesTool
+from agent.tools.specialized_intelligence_tool import SpecializedIntelligenceTool
+from agent.tools.advanced_interaction_tool import AdvancedInteractionTool
 from services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
-from services.langfuse import langfuse
 from agent.gemini_prompt import get_gemini_system_prompt
+=======
+from agent.tools.sb_image_edit_tool import SandboxImageEditTool
+from agent.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
+from agent.tools.sb_presentation_tool_v2 import SandboxPresentationToolV2
+from services.langfuse import langfuse
+from langfuse.client import StatefulTraceClient
+
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 from agent.tools.mcp_tool_wrapper import MCPToolWrapper
+from agent.tools.task_list_tool import TaskListTool
 from agentpress.tool import SchemaType
+from agent.tools.sb_sheets_tool import SandboxSheetsTool
+from agent.tools.sb_web_dev_tool import SandboxWebDevTool
 
 load_dotenv()
 
-async def run_agent(
-    thread_id: str,
-    project_id: str,
-    stream: bool,
-    thread_manager: Optional[ThreadManager] = None,
-    native_max_auto_continues: int = 25,
-    max_iterations: int = 100,
-    model_name: str = "anthropic/claude-sonnet-4-20250514",
-    enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low',
-    enable_context_manager: bool = True,
-    agent_config: Optional[dict] = None,    
-    trace: Optional[StatefulTraceClient] = None,
-    is_agent_builder: Optional[bool] = False,
+
+@dataclass
+class AgentConfig:
+    thread_id: str
+    project_id: str
+    stream: bool
+    native_max_auto_continues: int = 25
+    max_iterations: int = 100
+    model_name: str = "openai/gpt-5-mini"
+    enable_thinking: Optional[bool] = False
+    reasoning_effort: Optional[str] = 'low'
+    enable_context_manager: bool = True
+    agent_config: Optional[dict] = None
+    trace: Optional[StatefulTraceClient] = None
+    is_agent_builder: Optional[bool] = False
     target_agent_id: Optional[str] = None
-):
-    """Run the development agent with specified configuration."""
-    logger.info(f"🚀 Starting agent with model: {model_name}")
-    if agent_config:
-        logger.info(f"Using custom agent: {agent_config.get('name', 'Unknown')}")
 
-    if not trace:
-        trace = langfuse.trace(name="run_agent", session_id=thread_id, metadata={"project_id": project_id})
-    thread_manager = ThreadManager(trace=trace, is_agent_builder=is_agent_builder, target_agent_id=target_agent_id, agent_config=agent_config)
 
-    client = await thread_manager.db.client
-
-    # Get account ID from thread for billing checks
-    account_id = await get_account_id_from_thread(client, thread_id)
-    if not account_id:
-        raise ValueError("Could not determine account ID for thread")
-
-    # Get sandbox info from project
-    project = await client.table('projects').select('*').eq('project_id', project_id).execute()
-    if not project.data or len(project.data) == 0:
-        raise ValueError(f"Project {project_id} not found")
-
-    project_data = project.data[0]
-    sandbox_info = project_data.get('sandbox', {})
-    if not sandbox_info.get('id'):
-        raise ValueError(f"No sandbox found for project {project_id}")
-
-    # Initialize tools with project_id instead of sandbox object
-    # This ensures each tool independently verifies it's operating on the correct project
+class ToolManager:
+    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str):
+        self.thread_manager = thread_manager
+        self.project_id = project_id
+        self.thread_id = thread_id
     
-    # Get enabled tools from agent config, or use defaults
-    enabled_tools = None
-    if agent_config and 'agentpress_tools' in agent_config:
-        enabled_tools = agent_config['agentpress_tools']
-        logger.info(f"Using custom tool configuration from agent")
+    def register_all_tools(self, agent_id: Optional[str] = None, disabled_tools: Optional[List[str]] = None):
+        """Register all available tools by default, with optional exclusions.
+        
+        Args:
+            agent_id: Optional agent ID for agent builder tools
+            disabled_tools: List of tool names to exclude from registration
+        """
+        disabled_tools = disabled_tools or []
+        
+        logger.debug(f"Registering tools with disabled list: {disabled_tools}")
+        
+        # Core tools - always enabled
+        self._register_core_tools()
+        
+        # Sandbox tools
+        self._register_sandbox_tools(disabled_tools)
+        
+        # Data and utility tools
+        self._register_utility_tools(disabled_tools)
+        
+        # Agent builder tools - register if agent_id provided
+        if agent_id:
+            self._register_agent_builder_tools(agent_id, disabled_tools)
+        
+        # Browser tool
+        self._register_browser_tool(disabled_tools)
+        
+        logger.debug(f"Tool registration complete. Registered tools: {list(self.thread_manager.tool_registry.tools.keys())}")
     
-    # Register tools based on configuration
-    # If no agent config (enabled_tools is None), register ALL tools for full Suna capabilities
-    # If agent config exists, only register explicitly enabled tools
-    if is_agent_builder:
-        logger.info("Agent builder mode - registering only update agent tool")
-        from agent.tools.update_agent_tool import UpdateAgentTool
+    def _register_core_tools(self):
+        """Register core tools that are always available."""
+        self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
+        self.thread_manager.add_tool(MessageTool)
+        self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
+    
+    def _register_sandbox_tools(self, disabled_tools: List[str]):
+        """Register sandbox-related tools."""
+        sandbox_tools = [
+            ('sb_shell_tool', SandboxShellTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_files_tool', SandboxFilesTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_deploy_tool', SandboxDeployTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_expose_tool', SandboxExposeTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('web_search_tool', SandboxWebSearchTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_vision_tool', SandboxVisionTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
+            ('sb_image_edit_tool', SandboxImageEditTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
+            ('sb_presentation_outline_tool', SandboxPresentationOutlineTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_presentation_tool_v2', SandboxPresentationToolV2, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_sheets_tool', SandboxSheetsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
+        ]
+        
+        for tool_name, tool_class, kwargs in sandbox_tools:
+            if tool_name not in disabled_tools:
+                self.thread_manager.add_tool(tool_class, **kwargs)
+                logger.debug(f"Registered {tool_name}")
+    
+    def _register_utility_tools(self, disabled_tools: List[str]):
+        """Register utility and data provider tools."""
+        if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
+            self.thread_manager.add_tool(DataProvidersTool)
+            logger.debug("Registered data_providers_tool")
+    
+    def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
+        """Register agent builder tools."""
+        from agent.tools.agent_builder_tools.agent_config_tool import AgentConfigTool
+        from agent.tools.agent_builder_tools.mcp_search_tool import MCPSearchTool
+        from agent.tools.agent_builder_tools.credential_profile_tool import CredentialProfileTool
+        from agent.tools.agent_builder_tools.workflow_tool import WorkflowTool
+        from agent.tools.agent_builder_tools.trigger_tool import TriggerTool
         from services.supabase import DBConnection
+        
         db = DBConnection()
+<<<<<<< HEAD
         thread_manager.add_tool(UpdateAgentTool, thread_manager=thread_manager, db_connection=db, agent_id=target_agent_id)
-
-    if enabled_tools is None:
-        # No agent specified - register ALL tools for full Suna experience
-        logger.info("No agent specified - registering all tools for full Suna capabilities")
-        thread_manager.add_tool(SandboxShellTool, project_id=project_id, thread_manager=thread_manager)
-        thread_manager.add_tool(SandboxFilesTool, project_id=project_id, thread_manager=thread_manager)
-        thread_manager.add_tool(SandboxBrowserTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        thread_manager.add_tool(SandboxDeployTool, project_id=project_id, thread_manager=thread_manager)
-        thread_manager.add_tool(SandboxExposeTool, project_id=project_id, thread_manager=thread_manager)
-        thread_manager.add_tool(ExpandMessageTool, thread_id=thread_id, thread_manager=thread_manager)
-        thread_manager.add_tool(MessageTool)
-        thread_manager.add_tool(SandboxWebSearchTool, project_id=project_id, thread_manager=thread_manager)
-        thread_manager.add_tool(SandboxVisionTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        if config.RAPID_API_KEY:
-            thread_manager.add_tool(DataProvidersTool)
     else:
-        logger.info("Custom agent specified - registering only enabled tools")
+        # Always register these basic tools
         thread_manager.add_tool(ExpandMessageTool, thread_id=thread_id, thread_manager=thread_manager)
         thread_manager.add_tool(MessageTool)
-        if enabled_tools.get('sb_shell_tool', {}).get('enabled', False):
+
+        if enabled_tools is None:
+            # No agent specified - register ALL tools for full Suna capabilities
+            logger.info("No agent specified - registering all tools for full Suna capabilities")
             thread_manager.add_tool(SandboxShellTool, project_id=project_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_files_tool', {}).get('enabled', False):
             thread_manager.add_tool(SandboxFilesTool, project_id=project_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_browser_tool', {}).get('enabled', False):
+            thread_manager.add_tool(FileConverterTool, project_id=project_id, thread_manager=thread_manager)
             thread_manager.add_tool(SandboxBrowserTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_deploy_tool', {}).get('enabled', False):
             thread_manager.add_tool(SandboxDeployTool, project_id=project_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_expose_tool', {}).get('enabled', False):
             thread_manager.add_tool(SandboxExposeTool, project_id=project_id, thread_manager=thread_manager)
-        if enabled_tools.get('web_search_tool', {}).get('enabled', False):
             thread_manager.add_tool(SandboxWebSearchTool, project_id=project_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_vision_tool', {}).get('enabled', False):
             thread_manager.add_tool(SandboxVisionTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        if config.RAPID_API_KEY and enabled_tools.get('data_providers_tool', {}).get('enabled', False):
-            thread_manager.add_tool(DataProvidersTool)
+            thread_manager.add_tool(NetlifyDeployTool)
+            # Register AI Enhancement Tools
+            thread_manager.add_tool(AIEnhancementTool, project_id=project_id, thread_manager=thread_manager)
+            thread_manager.add_tool(DataProcessingTool, project_id=project_id, thread_manager=thread_manager)
+            thread_manager.add_tool(IntegrationTool, project_id=project_id, thread_manager=thread_manager)
+            thread_manager.add_tool(StorageSecurityTool, project_id=project_id, thread_manager=thread_manager)
+            thread_manager.add_tool(MonitoringMaintenanceTool, project_id=project_id, thread_manager=thread_manager)
+            # Register Advanced Cognitive and Specialized Tools
+            thread_manager.add_tool(CognitiveCapabilitiesTool, project_id=project_id, thread_manager=thread_manager)
+            thread_manager.add_tool(SpecializedIntelligenceTool, project_id=project_id, thread_manager=thread_manager)
+            thread_manager.add_tool(AdvancedInteractionTool, project_id=project_id, thread_manager=thread_manager)
+        else:
+            # Custom agent specified - register only enabled tools
+            logger.info("Custom agent specified - registering only enabled tools")
+            if enabled_tools.get('sb_shell_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxShellTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('sb_files_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxFilesTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('sb_browser_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxBrowserTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
+            if enabled_tools.get('sb_deploy_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxDeployTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('sb_expose_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxExposeTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('web_search_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxWebSearchTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('sb_vision_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SandboxVisionTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
+            if enabled_tools.get('netlify_deploy_tool', {}).get('enabled', False):
+                thread_manager.add_tool(NetlifyDeployTool)
+            # Register AI Enhancement Tools if enabled
+            if enabled_tools.get('ai_enhancement_tool', {}).get('enabled', False):
+                thread_manager.add_tool(AIEnhancementTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('data_processing_tool', {}).get('enabled', False):
+                thread_manager.add_tool(DataProcessingTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('integration_tool', {}).get('enabled', False):
+                thread_manager.add_tool(IntegrationTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('storage_security_tool', {}).get('enabled', False):
+                thread_manager.add_tool(StorageSecurityTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('monitoring_maintenance_tool', {}).get('enabled', False):
+                thread_manager.add_tool(MonitoringMaintenanceTool, project_id=project_id, thread_manager=thread_manager)
+            # Register Advanced Cognitive and Specialized Tools if enabled
+            if enabled_tools.get('cognitive_capabilities_tool', {}).get('enabled', False):
+                thread_manager.add_tool(CognitiveCapabilitiesTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('specialized_intelligence_tool', {}).get('enabled', False):
+                thread_manager.add_tool(SpecializedIntelligenceTool, project_id=project_id, thread_manager=thread_manager)
+            if enabled_tools.get('advanced_interaction_tool', {}).get('enabled', False):
+                thread_manager.add_tool(AdvancedInteractionTool, project_id=project_id, thread_manager=thread_manager)
+
+        if config.RAPID_API_KEY:
+            if enabled_tools is None or (enabled_tools and enabled_tools.get('data_providers_tool', {}).get('enabled', False)):
+                thread_manager.add_tool(DataProvidersTool)
 
     # Register MCP tool wrapper if agent has configured MCPs or custom MCPs
     mcp_wrapper_instance = None
     if agent_config:
         # Merge configured_mcps and custom_mcps
+=======
+        
+        agent_builder_tools = [
+            ('agent_config_tool', AgentConfigTool),
+            ('mcp_search_tool', MCPSearchTool),
+            ('credential_profile_tool', CredentialProfileTool),
+            ('workflow_tool', WorkflowTool),
+            ('trigger_tool', TriggerTool),
+        ]
+        
+        for tool_name, tool_class in agent_builder_tools:
+            if tool_name not in disabled_tools:
+                self.thread_manager.add_tool(tool_class, thread_manager=self.thread_manager, db_connection=db, agent_id=agent_id)
+                logger.debug(f"Registered {tool_name}")
+    
+    def _register_browser_tool(self, disabled_tools: List[str]):
+        """Register browser tool."""
+        if 'browser_tool' not in disabled_tools:
+            from agent.tools.browser_tool import BrowserTool
+            self.thread_manager.add_tool(BrowserTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
+            logger.debug("Registered browser_tool")
+    
+
+class MCPManager:
+    def __init__(self, thread_manager: ThreadManager, account_id: str):
+        self.thread_manager = thread_manager
+        self.account_id = account_id
+    
+    async def register_mcp_tools(self, agent_config: dict) -> Optional[MCPToolWrapper]:
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
         all_mcps = []
         
-        # Add standard configured MCPs
         if agent_config.get('configured_mcps'):
             all_mcps.extend(agent_config['configured_mcps'])
         
-        # Add custom MCPs
         if agent_config.get('custom_mcps'):
             for custom_mcp in agent_config['custom_mcps']:
-                # Transform custom MCP to standard format
                 custom_type = custom_mcp.get('customType', custom_mcp.get('type', 'sse'))
+                
+                if custom_type == 'pipedream':
+                    if 'config' not in custom_mcp:
+                        custom_mcp['config'] = {}
+                    
+                    if not custom_mcp['config'].get('external_user_id'):
+                        profile_id = custom_mcp['config'].get('profile_id')
+                        if profile_id:
+                            try:
+                                from pipedream import profile_service
+                                from uuid import UUID
+                                
+                                profile = await profile_service.get_profile(UUID(self.account_id), UUID(profile_id))
+                                if profile:
+                                    custom_mcp['config']['external_user_id'] = profile.external_user_id
+                            except Exception as e:
+                                logger.error(f"Error retrieving external_user_id from profile {profile_id}: {e}")
+                    
+                    if 'headers' in custom_mcp['config'] and 'x-pd-app-slug' in custom_mcp['config']['headers']:
+                        custom_mcp['config']['app_slug'] = custom_mcp['config']['headers']['x-pd-app-slug']
+                
+                elif custom_type == 'composio':
+                    qualified_name = custom_mcp.get('qualifiedName')
+                    if not qualified_name:
+                        qualified_name = f"composio.{custom_mcp['name'].replace(' ', '_').lower()}"
+                    
+                    mcp_config = {
+                        'name': custom_mcp['name'],
+                        'qualifiedName': qualified_name,
+                        'config': custom_mcp.get('config', {}),
+                        'enabledTools': custom_mcp.get('enabledTools', []),
+                        'instructions': custom_mcp.get('instructions', ''),
+                        'isCustom': True,
+                        'customType': 'composio'
+                    }
+                    all_mcps.append(mcp_config)
+                    continue
+                
                 mcp_config = {
                     'name': custom_mcp['name'],
                     'qualifiedName': f"custom_{custom_type}_{custom_mcp['name'].replace(' ', '_').lower()}",
@@ -156,15 +315,19 @@ async def run_agent(
                 }
                 all_mcps.append(mcp_config)
         
-        if all_mcps:
-            logger.info(f"Registering MCP tool wrapper for {len(all_mcps)} MCP servers (including {len(agent_config.get('custom_mcps', []))} custom)")
-            thread_manager.add_tool(MCPToolWrapper, mcp_configs=all_mcps)
+        if not all_mcps:
+            return None
+        
+        mcp_wrapper_instance = MCPToolWrapper(mcp_configs=all_mcps)
+        try:
+            await mcp_wrapper_instance.initialize_and_register_tools()
             
+<<<<<<< HEAD
             for tool_name, tool_info in thread_manager.tool_registry.tools.items():
                 if isinstance(tool_info['instance'], MCPToolWrapper):
                     mcp_wrapper_instance = tool_info['instance']
                     break
-            
+        
             if mcp_wrapper_instance:
                 try:
                     await mcp_wrapper_instance.initialize_and_register_tools()
@@ -184,21 +347,39 @@ async def run_agent(
                     # Log all registered tools for debugging
                     all_tools = list(thread_manager.tool_registry.tools.keys())
                     logger.info(f"All registered tools after MCP initialization: {all_tools}")
-                    mcp_tools = [tool for tool in all_tools if tool not in ['call_mcp_tool', 'sb_files_tool', 'message_tool', 'expand_msg_tool', 'web_search_tool', 'sb_shell_tool', 'sb_vision_tool', 'sb_browser_tool', 'computer_use_tool', 'data_providers_tool', 'sb_deploy_tool', 'sb_expose_tool', 'update_agent_tool']]
+                    mcp_tools = [tool for tool in all_tools if tool not in ['call_mcp_tool', 'sb_files_tool', 'message_tool', 'expand_msg_tool', 'web_search_tool', 'sb_shell_tool', 'sb_vision_tool', 'sb_browser_tool', 'computer_use_tool', 'data_providers_tool', 'sb_deploy_tool', 'sb_expose_tool', 'update_agent_tool', 'ai_enhancement_tool', 'data_processing_tool', 'integration_tool', 'storage_security_tool', 'monitoring_maintenance_tool', 'cognitive_capabilities_tool', 'specialized_intelligence_tool', 'advanced_interaction_tool']]
                     logger.info(f"MCP tools registered: {mcp_tools}")
                 
                 except Exception as e:
                     logger.error(f"Failed to initialize MCP tools: {e}")
                     # Continue without MCP tools if initialization fails
+=======
+            updated_schemas = mcp_wrapper_instance.get_schemas()
+            for method_name, schema_list in updated_schemas.items():
+                for schema in schema_list:
+                    self.thread_manager.tool_registry.tools[method_name] = {
+                        "instance": mcp_wrapper_instance,
+                        "schema": schema
+                    }
+            
+            logger.debug(f"⚡ Registered {len(updated_schemas)} MCP tools (Redis cache enabled)")
+            return mcp_wrapper_instance
+        except Exception as e:
+            logger.error(f"Failed to initialize MCP tools: {e}")
+            return None
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
-    # Prepare system prompt
-    # First, get the default system prompt
-    if "gemini-2.5-flash" in model_name.lower() and "gemini-2.5-pro" not in model_name.lower():
-        default_system_content = get_gemini_system_prompt()
-    else:
-        # Use the original prompt - the LLM can only use tools that are registered
+
+class PromptManager:
+    @staticmethod
+    async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
+                                  is_agent_builder: bool, thread_id: str, 
+                                  mcp_wrapper_instance: Optional[MCPToolWrapper],
+                                  client=None) -> dict:
+        
         default_system_content = get_system_prompt()
         
+<<<<<<< HEAD
     # Add sample response for non-anthropic models
     if "anthropic" not in model_name.lower():
         sample_response_path = os.path.join(os.path.dirname(__file__), 'sample_responses/1.txt')
@@ -209,16 +390,12 @@ async def run_agent(
     # Handle custom agent system prompt
     if agent_config and agent_config.get('system_prompt'):
         custom_system_prompt = agent_config['system_prompt'].strip()
-        
-        # Completely replace the default system prompt with the custom one
-        # This prevents confusion and tool hallucination
         system_content = custom_system_prompt
         logger.info(f"Using ONLY custom agent system prompt for: {agent_config.get('name', 'Unknown')}")
     elif is_agent_builder:
         system_content = get_agent_builder_prompt()
         logger.info("Using agent builder system prompt")
     else:
-        # Use just the default system prompt
         system_content = default_system_content
         logger.info("Using default system prompt only")
     
@@ -242,7 +419,6 @@ async def run_agent(
         except Exception as e:
             logger.error(f"Error retrieving knowledge base context for thread {thread_id}: {e}")
 
-
     if agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized:
         mcp_info = "\n\n--- MCP Tools Available ---\n"
         mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
@@ -257,18 +433,15 @@ async def run_agent(
         # List available MCP tools
         mcp_info += "Available MCP tools:\n"
         try:
-            # Get the actual registered schemas from the wrapper
             registered_schemas = mcp_wrapper_instance.get_schemas()
             for method_name, schema_list in registered_schemas.items():
                 if method_name == 'call_mcp_tool':
-                    continue  # Skip the fallback method
+                    continue
                     
-                # Get the schema info
                 for schema in schema_list:
                     if schema.schema_type == SchemaType.OPENAPI:
                         func_info = schema.schema.get('function', {})
                         description = func_info.get('description', 'No description available')
-                        # Extract server name from description if available
                         server_match = description.find('(MCP Server: ')
                         if server_match != -1:
                             server_end = description.find(')', server_match)
@@ -277,18 +450,114 @@ async def run_agent(
                             server_info = ''
                         
                         mcp_info += f"- **{method_name}**: {description}\n"
-                        
-                        # Show parameter info
                         params = func_info.get('parameters', {})
                         props = params.get('properties', {})
                         if props:
                             mcp_info += f"  Parameters: {', '.join(props.keys())}\n"
-                            
-        except Exception as e:
-            logger.error(f"Error listing MCP tools: {e}")
-            mcp_info += "- Error loading MCP tool list\n"
+=======
+        if "anthropic" not in model_name.lower():
+            sample_response_path = os.path.join(os.path.dirname(__file__), 'sample_responses/1.txt')
+            with open(sample_response_path, 'r') as file:
+                sample_response = file.read()
+            default_system_content = default_system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
         
-        # Add critical instructions for using search results
+        if is_agent_builder:
+            system_content = get_agent_builder_prompt()
+        elif agent_config and agent_config.get('system_prompt'):
+            system_content = agent_config['system_prompt'].strip()
+        else:
+            system_content = default_system_content
+        
+        # Add agent knowledge base context if available
+        if client and agent_config and agent_config.get('agent_id'):
+            try:
+                logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
+                
+                # Use only agent-based knowledge base context
+                kb_result = await client.rpc('get_agent_knowledge_base_context', {
+                    'p_agent_id': agent_config['agent_id']
+                }).execute()
+                
+                if kb_result.data and kb_result.data.strip():
+                    logger.debug(f"Found agent knowledge base context, adding to system prompt (length: {len(kb_result.data)} chars)")
+                    # logger.debug(f"Knowledge base data object: {kb_result.data[:500]}..." if len(kb_result.data) > 500 else f"Knowledge base data object: {kb_result.data}")
+                    
+                    # Construct a well-formatted knowledge base section
+                    kb_section = f"""
+
+=== AGENT KNOWLEDGE BASE ===
+NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+
+{kb_result.data}
+
+=== END AGENT KNOWLEDGE BASE ===
+
+IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                    
+                    system_content += kb_section
+                else:
+                    logger.debug("No knowledge base context found for this agent")
+                    
+            except Exception as e:
+                logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
+                # Continue without knowledge base context rather than failing
+        
+        if agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized:
+            mcp_info = "\n\n--- MCP Tools Available ---\n"
+            mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
+            mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
+            mcp_info += '<function_calls>\n'
+            mcp_info += '<invoke name="{tool_name}">\n'
+            mcp_info += '<parameter name="param1">value1</parameter>\n'
+            mcp_info += '<parameter name="param2">value2</parameter>\n'
+            mcp_info += '</invoke>\n'
+            mcp_info += '</function_calls>\n\n'
+            
+            mcp_info += "Available MCP tools:\n"
+            try:
+                registered_schemas = mcp_wrapper_instance.get_schemas()
+                for method_name, schema_list in registered_schemas.items():
+                    for schema in schema_list:
+                        if schema.schema_type == SchemaType.OPENAPI:
+                            func_info = schema.schema.get('function', {})
+                            description = func_info.get('description', 'No description available')
+                            mcp_info += f"- **{method_name}**: {description}\n"
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
+                            
+                            params = func_info.get('parameters', {})
+                            props = params.get('properties', {})
+                            if props:
+                                mcp_info += f"  Parameters: {', '.join(props.keys())}\n"
+                                
+            except Exception as e:
+                logger.error(f"Error listing MCP tools: {e}")
+                mcp_info += "- Error loading MCP tool list\n"
+            
+            mcp_info += "\n🚨 CRITICAL MCP TOOL RESULT INSTRUCTIONS 🚨\n"
+            mcp_info += "When you use ANY MCP (Model Context Protocol) tools:\n"
+            mcp_info += "1. ALWAYS read and use the EXACT results returned by the MCP tool\n"
+            mcp_info += "2. For search tools: ONLY cite URLs, sources, and information from the actual search results\n"
+            mcp_info += "3. For any tool: Base your response entirely on the tool's output - do NOT add external information\n"
+            mcp_info += "4. DO NOT fabricate, invent, hallucinate, or make up any sources, URLs, or data\n"
+            mcp_info += "5. If you need more information, call the MCP tool again with different parameters\n"
+            mcp_info += "6. When writing reports/summaries: Reference ONLY the data from MCP tool results\n"
+            mcp_info += "7. If the MCP tool doesn't return enough information, explicitly state this limitation\n"
+            mcp_info += "8. Always double-check that every fact, URL, and reference comes from the MCP tool output\n"
+            mcp_info += "\nIMPORTANT: MCP tool results are your PRIMARY and ONLY source of truth for external data!\n"
+            mcp_info += "NEVER supplement MCP results with your training data or make assumptions beyond what the tools provide.\n"
+            
+            system_content += mcp_info
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        datetime_info = f"\n\n=== CURRENT DATE/TIME INFORMATION ===\n"
+        datetime_info += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
+        datetime_info += f"Current UTC time: {now.strftime('%H:%M:%S UTC')}\n"
+        datetime_info += f"Current year: {now.strftime('%Y')}\n"
+        datetime_info += f"Current month: {now.strftime('%B')}\n"
+        datetime_info += f"Current day: {now.strftime('%A')}\n"
+        datetime_info += "Use this information for any time-sensitive tasks, research, or when current date/time context is needed.\n"
+        
+<<<<<<< HEAD
         mcp_info += "\n🚨 CRITICAL MCP TOOL RESULT INSTRUCTIONS 🚨\n"
         mcp_info += "When you use ANY MCP (Model Context Protocol) tools:\n"
         mcp_info += "1. ALWAYS read and use the EXACT results returned by the MCP tool\n"
@@ -304,7 +573,7 @@ async def run_agent(
         
         system_content += mcp_info
     
-    system_message = { "role": "system", "content": system_content }
+    system_message = {"role": "system", "content": system_content}
 
     iteration_count = 0
     continue_execution = True
@@ -320,18 +589,18 @@ async def run_agent(
         iteration_count += 1
         logger.info(f"🔄 Running iteration {iteration_count} of {max_iterations}...")
 
-        # Billing check on each iteration - still needed within the iterations
+        # Billing check on each iteration
         can_run, message, subscription = await check_billing_status(client, account_id)
         if not can_run:
             error_msg = f"Billing limit reached: {message}"
             trace.event(name="billing_limit_reached", level="ERROR", status_message=(f"{error_msg}"))
-            # Yield a special message to indicate billing limit reached
             yield {
                 "type": "status",
                 "status": "stopped",
                 "message": error_msg
             }
             break
+
         # Check if last message is from assistant using direct Supabase query
         latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
         if latest_message.data and len(latest_message.data) > 0:
@@ -344,10 +613,28 @@ async def run_agent(
 
         # ---- Temporary Message Handling (Browser State & Image Context) ----
         temporary_message = None
-        temp_message_content_list = [] # List to hold text/image blocks
+        temp_message_content_list = []
 
         # Get the latest browser_state message
         latest_browser_state_msg = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
+=======
+        system_content += datetime_info
+
+        return {"role": "system", "content": system_content}
+
+
+class MessageManager:
+    def __init__(self, client, thread_id: str, model_name: str, trace: Optional[StatefulTraceClient]):
+        self.client = client
+        self.thread_id = thread_id
+        self.model_name = model_name
+        self.trace = trace
+    
+    async def build_temporary_message(self) -> Optional[dict]:
+        temp_message_content_list = []
+
+        latest_browser_state_msg = await self.client.table('messages').select('*').eq('thread_id', self.thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
         if latest_browser_state_msg.data and len(latest_browser_state_msg.data) > 0:
             try:
                 browser_content = latest_browser_state_msg.data[0]["content"]
@@ -356,7 +643,6 @@ async def run_agent(
                 screenshot_base64 = browser_content.get("screenshot_base64")
                 screenshot_url = browser_content.get("image_url")
                 
-                # Create a copy of the browser state without screenshot data
                 browser_state_text = browser_content.copy()
                 browser_state_text.pop('screenshot_base64', None)
                 browser_state_text.pop('image_url', None)
@@ -367,40 +653,36 @@ async def run_agent(
                         "text": f"The following is the current state of the browser:\n{json.dumps(browser_state_text, indent=2)}"
                     })
                 
-                # Only add screenshot if model is not Gemini, Anthropic, or OpenAI
+<<<<<<< HEAD
                 if 'gemini' in model_name.lower() or 'anthropic' in model_name.lower() or 'openai' in model_name.lower():
-                    # Prioritize screenshot_url if available
+=======
+                if 'gemini' in self.model_name.lower() or 'anthropic' in self.model_name.lower() or 'openai' in self.model_name.lower():
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     if screenshot_url:
                         temp_message_content_list.append({
                             "type": "image_url",
                             "image_url": {
                                 "url": screenshot_url,
-                                "format": "image/jpeg"
+                                "format": "image/png"
                             }
                         })
-                        trace.event(name="screenshot_url_added_to_temporary_message", level="DEFAULT", status_message=(f"Screenshot URL added to temporary message."))
                     elif screenshot_base64:
-                        # Fallback to base64 if URL not available
                         temp_message_content_list.append({
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{screenshot_base64}",
+                                "url": f"data:image/png;base64,{screenshot_base64}",
                             }
                         })
-                        trace.event(name="screenshot_base64_added_to_temporary_message", level="WARNING", status_message=(f"Screenshot base64 added to temporary message. Prefer screenshot_url if available."))
-                    else:
-                        logger.warning("Browser state found but no screenshot data.")
-                        trace.event(name="browser_state_found_but_no_screenshot_data", level="WARNING", status_message=(f"Browser state found but no screenshot data."))
-                else:
-                    logger.warning("Model is Gemini, Anthropic, or OpenAI, so not adding screenshot to temporary message.")
-                    trace.event(name="model_is_gemini_anthropic_or_openai", level="WARNING", status_message=(f"Model is Gemini, Anthropic, or OpenAI, so not adding screenshot to temporary message."))
 
             except Exception as e:
                 logger.error(f"Error parsing browser state: {e}")
-                trace.event(name="error_parsing_browser_state", level="ERROR", status_message=(f"{e}"))
 
-        # Get the latest image_context message (NEW)
+<<<<<<< HEAD
+        # Get the latest image_context message
         latest_image_context_msg = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'image_context').order('created_at', desc=True).limit(1).execute()
+=======
+        latest_image_context_msg = await self.client.table('messages').select('*').eq('thread_id', self.thread_id).eq('type', 'image_context').order('created_at', desc=True).limit(1).execute()
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
         if latest_image_context_msg.data and len(latest_image_context_msg.data) > 0:
             try:
                 image_context_content = latest_image_context_msg.data[0]["content"] if isinstance(latest_image_context_msg.data[0]["content"], dict) else json.loads(latest_image_context_msg.data[0]["content"])
@@ -419,34 +701,26 @@ async def run_agent(
                             "url": f"data:{mime_type};base64,{base64_image}",
                         }
                     })
-                else:
-                    logger.warning(f"Image context found for '{file_path}' but missing base64 or mime_type.")
 
-                await client.table('messages').delete().eq('message_id', latest_image_context_msg.data[0]["message_id"]).execute()
+                await self.client.table('messages').delete().eq('message_id', latest_image_context_msg.data[0]["message_id"]).execute()
             except Exception as e:
                 logger.error(f"Error parsing image context: {e}")
-                trace.event(name="error_parsing_image_context", level="ERROR", status_message=(f"{e}"))
 
-        # If we have any content, construct the temporary_message
         if temp_message_content_list:
+<<<<<<< HEAD
             temporary_message = {"role": "user", "content": temp_message_content_list}
-            # logger.debug(f"Constructed temporary message with {len(temp_message_content_list)} content blocks.")
-        # ---- End Temporary Message Handling ----
 
         # Set max_tokens based on model
         max_tokens = None
         if "sonnet" in model_name.lower():
-            # Claude 3.5 Sonnet has a limit of 8192 tokens
             max_tokens = 8192
         elif "gpt-4" in model_name.lower():
             max_tokens = 4096
         elif "gemini-2.5-pro" in model_name.lower():
-            # Gemini 2.5 Pro has 64k max output tokens
             max_tokens = 64000
             
         generation = trace.generation(name="thread_manager.run_thread")
         try:
-            # Make the LLM call and process the response
             response = await thread_manager.run_thread(
                 thread_id=thread_id,
                 system_prompt=system_message,
@@ -472,34 +746,184 @@ async def run_agent(
                 enable_context_manager=enable_context_manager,
                 generation=generation
             )
+=======
+            return {"role": "user", "content": temp_message_content_list}
+        return None
 
-            if isinstance(response, dict) and "status" in response and response["status"] == "error":
-                logger.error(f"Error response from run_thread: {response.get('message', 'Unknown error')}")
-                trace.event(name="error_response_from_run_thread", level="ERROR", status_message=(f"{response.get('message', 'Unknown error')}"))
-                yield response
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
+
+class AgentRunner:
+    def __init__(self, config: AgentConfig):
+        self.config = config
+    
+    async def setup(self):
+        if not self.config.trace:
+            self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
+        
+        self.thread_manager = ThreadManager(
+            trace=self.config.trace, 
+            is_agent_builder=self.config.is_agent_builder or False, 
+            target_agent_id=self.config.target_agent_id, 
+            agent_config=self.config.agent_config
+        )
+        
+        self.client = await self.thread_manager.db.client
+        self.account_id = await get_account_id_from_thread(self.client, self.config.thread_id)
+        if not self.account_id:
+            raise ValueError("Could not determine account ID for thread")
+
+        project = await self.client.table('projects').select('*').eq('project_id', self.config.project_id).execute()
+        if not project.data or len(project.data) == 0:
+            raise ValueError(f"Project {self.config.project_id} not found")
+
+        project_data = project.data[0]
+        sandbox_info = project_data.get('sandbox', {})
+        if not sandbox_info.get('id'):
+            # Sandbox is created lazily by tools when required. Do not fail setup
+            # if no sandbox is present — tools will call `_ensure_sandbox()`
+            # which will create and persist the sandbox metadata when needed.
+            logger.debug(f"No sandbox found for project {self.config.project_id}; will create lazily when needed")
+    
+    async def setup_tools(self):
+        tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id)
+        
+        # Determine agent ID for agent builder tools
+        agent_id = None
+        if self.config.agent_config and self.config.agent_config.get('is_suna_default', False):
+            agent_id = self.config.agent_config['agent_id']
+        elif self.config.is_agent_builder and self.config.target_agent_id:
+            agent_id = self.config.target_agent_id
+        
+        # Convert agent config to disabled tools list
+        disabled_tools = self._get_disabled_tools_from_config()
+        
+        # Register all tools with exclusions
+        tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools)
+    
+    def _get_disabled_tools_from_config(self) -> List[str]:
+        """Convert agent config to list of disabled tools."""
+        disabled_tools = []
+        
+        if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
+            # No tool configuration - enable all tools by default
+            return disabled_tools
+        
+        raw_tools = self.config.agent_config['agentpress_tools']
+        
+        # Handle different formats of tool configuration
+        if not isinstance(raw_tools, dict):
+            # If not a dict, assume all tools are enabled
+            return disabled_tools
+        
+        # Special case: Suna default agents with empty tool config enable all tools
+        if self.config.agent_config.get('is_suna_default', False) and not raw_tools:
+            return disabled_tools
+        
+        def is_tool_enabled(tool_name: str) -> bool:
+            try:
+                tool_config = raw_tools.get(tool_name, True)  # Default to True (enabled) if not specified
+                if isinstance(tool_config, bool):
+                    return tool_config
+                elif isinstance(tool_config, dict):
+                    return tool_config.get('enabled', True)  # Default to True (enabled) if not specified
+                else:
+                    return True  # Default to enabled
+            except Exception:
+                return True  # Default to enabled
+        
+        # List of all available tools
+        all_tools = [
+            'sb_shell_tool', 'sb_files_tool', 'sb_deploy_tool', 'sb_expose_tool',
+            'web_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
+            'sb_sheets_tool', 'sb_web_dev_tool', 'data_providers_tool', 'browser_tool',
+            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
+            'workflow_tool', 'trigger_tool'
+        ]
+        
+        # Add tools that are explicitly disabled
+        for tool_name in all_tools:
+            if not is_tool_enabled(tool_name):
+                disabled_tools.append(tool_name)
+        
+        # Special handling for presentation tools
+        if 'sb_presentation_tool' in disabled_tools:
+            disabled_tools.extend(['sb_presentation_outline_tool', 'sb_presentation_tool_v2'])
+        
+        logger.debug(f"Disabled tools from config: {disabled_tools}")
+        return disabled_tools
+    
+    async def setup_mcp_tools(self) -> Optional[MCPToolWrapper]:
+        if not self.config.agent_config:
+            return None
+        
+        mcp_manager = MCPManager(self.thread_manager, self.account_id)
+        return await mcp_manager.register_mcp_tools(self.config.agent_config)
+    
+    def get_max_tokens(self) -> Optional[int]:
+        if "sonnet" in self.config.model_name.lower():
+            return 8192
+        elif "gpt-4" in self.config.model_name.lower():
+            return 4096
+        elif "gemini-2.5-pro" in self.config.model_name.lower():
+            return 64000
+        elif "kimi-k2" in self.config.model_name.lower():
+            return 8192
+        return None
+    
+    async def run(self) -> AsyncGenerator[Dict[str, Any], None]:
+        await self.setup()
+        await self.setup_tools()
+        mcp_wrapper_instance = await self.setup_mcp_tools()
+        
+        system_message = await PromptManager.build_system_prompt(
+            self.config.model_name, self.config.agent_config, 
+            self.config.is_agent_builder, self.config.thread_id, 
+            mcp_wrapper_instance, self.client
+        )
+
+        iteration_count = 0
+        continue_execution = True
+
+        latest_user_message = await self.client.table('messages').select('*').eq('thread_id', self.config.thread_id).eq('type', 'user').order('created_at', desc=True).limit(1).execute()
+        if latest_user_message.data and len(latest_user_message.data) > 0:
+            data = latest_user_message.data[0]['content']
+            if isinstance(data, str):
+                data = json.loads(data)
+            if self.config.trace:
+                self.config.trace.update(input=data['content'])
+
+        message_manager = MessageManager(self.client, self.config.thread_id, self.config.model_name, self.config.trace)
+
+        while continue_execution and iteration_count < self.config.max_iterations:
+            iteration_count += 1
+
+            can_run, message, subscription = await check_billing_status(self.client, self.account_id)
+            if not can_run:
+                error_msg = f"Billing limit reached: {message}"
+                yield {
+                    "type": "status",
+                    "status": "stopped",
+                    "message": error_msg
+                }
                 break
 
-            # Track if we see ask, complete, or web-browser-takeover tool calls
+<<<<<<< HEAD
             last_tool_call = None
             agent_should_terminate = False
-
-            # Process the response
             error_detected = False
+            full_response = ""
+
             try:
-                full_response = ""
                 async for chunk in response:
-                    # If we receive an error chunk, we should stop after this iteration
                     if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
                         logger.error(f"Error chunk detected: {chunk.get('message', 'Unknown error')}")
                         trace.event(name="error_chunk_detected", level="ERROR", status_message=(f"{chunk.get('message', 'Unknown error')}"))
                         error_detected = True
-                        yield chunk  # Forward the error chunk
-                        continue     # Continue processing other chunks but don't break yet
+                        yield chunk
+                        continue
                     
-                    # Check for termination signal in status messages
                     if chunk.get('type') == 'status':
                         try:
-                            # Parse the metadata to check for termination signal
                             metadata = chunk.get('metadata', {})
                             if isinstance(metadata, str):
                                 metadata = json.loads(metadata)
@@ -509,7 +933,6 @@ async def run_agent(
                                 logger.info("Agent termination signal detected in status message")
                                 trace.event(name="agent_termination_signal_detected", level="DEFAULT", status_message="Agent termination signal detected in status message")
                                 
-                                # Extract the tool name from the status content if available
                                 content = chunk.get('content', {})
                                 if isinstance(content, str):
                                     content = json.loads(content)
@@ -518,37 +941,143 @@ async def run_agent(
                                     last_tool_call = content['function_name']
                                 elif content.get('xml_tag_name'):
                                     last_tool_call = content['xml_tag_name']
+=======
+            latest_message = await self.client.table('messages').select('*').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
+            if latest_message.data and len(latest_message.data) > 0:
+                message_type = latest_message.data[0].get('type')
+                if message_type == 'assistant':
+                    continue_execution = False
+                    break
+
+            temporary_message = await message_manager.build_temporary_message()
+            max_tokens = self.get_max_tokens()
+            
+            generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
+            try:
+                response = await self.thread_manager.run_thread(
+                    thread_id=self.config.thread_id,
+                    system_prompt=system_message,
+                    stream=self.config.stream,
+                    llm_model=self.config.model_name,
+                    llm_temperature=0,
+                    llm_max_tokens=max_tokens,
+                    tool_choice="auto",
+                    max_xml_tool_calls=1,
+                    temporary_message=temporary_message,
+                    processor_config=ProcessorConfig(
+                        xml_tool_calling=True,
+                        native_tool_calling=False,
+                        execute_tools=True,
+                        execute_on_stream=True,
+                        tool_execution_strategy="parallel",
+                        xml_adding_strategy="user_message"
+                    ),
+                    native_max_auto_continues=self.config.native_max_auto_continues,
+                    include_xml_examples=True,
+                    enable_thinking=self.config.enable_thinking,
+                    reasoning_effort=self.config.reasoning_effort,
+                    enable_context_manager=self.config.enable_context_manager,
+                    generation=generation
+                )
+
+                if isinstance(response, dict) and "status" in response and response["status"] == "error":
+                    yield response
+                    break
+
+                last_tool_call = None
+                agent_should_terminate = False
+                error_detected = False
+                full_response = ""
+
+                try:
+                    if hasattr(response, '__aiter__') and not isinstance(response, dict):
+                        async for chunk in response:
+                            if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
+                                error_detected = True
+                                yield chunk
+                                continue
+                            
+                            if chunk.get('type') == 'status':
+                                try:
+                                    metadata = chunk.get('metadata', {})
+                                    if isinstance(metadata, str):
+                                        metadata = json.loads(metadata)
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                                     
-                        except Exception as e:
-                            logger.debug(f"Error parsing status message for termination check: {e}")
+                                    if metadata.get('agent_should_terminate'):
+                                        agent_should_terminate = True
+                                        
+                                        content = chunk.get('content', {})
+                                        if isinstance(content, str):
+                                            content = json.loads(content)
+                                        
+                                        if content.get('function_name'):
+                                            last_tool_call = content['function_name']
+                                        elif content.get('xml_tag_name'):
+                                            last_tool_call = content['xml_tag_name']
+                                            
+                                except Exception:
+                                    pass
+                            
+                            if chunk.get('type') == 'assistant' and 'content' in chunk:
+                                try:
+                                    content = chunk.get('content', '{}')
+                                    if isinstance(content, str):
+                                        assistant_content_json = json.loads(content)
+                                    else:
+                                        assistant_content_json = content
+
+                                    assistant_text = assistant_content_json.get('content', '')
+                                    full_response += assistant_text
+                                    if isinstance(assistant_text, str):
+                                        if '</ask>' in assistant_text or '</complete>' in assistant_text or '</web-browser-takeover>' in assistant_text:
+                                           if '</ask>' in assistant_text:
+                                               xml_tool = 'ask'
+                                           elif '</complete>' in assistant_text:
+                                               xml_tool = 'complete'
+                                           elif '</web-browser-takeover>' in assistant_text:
+                                               xml_tool = 'web-browser-takeover'
+
+                                           last_tool_call = xml_tool
+                                
+                                except json.JSONDecodeError:
+                                    pass
+                                except Exception:
+                                    pass
+
+                            yield chunk
+                    else:
+                        error_detected = True
+
+                    if error_detected:
+                        if generation:
+                            generation.end(output=full_response, status_message="error_detected", level="ERROR")
+                        break
                         
-                    # Check for XML versions like <ask>, <complete>, or <web-browser-takeover> in assistant content chunks
+<<<<<<< HEAD
                     if chunk.get('type') == 'assistant' and 'content' in chunk:
                         try:
-                            # The content field might be a JSON string or object
                             content = chunk.get('content', '{}')
                             if isinstance(content, str):
                                 assistant_content_json = json.loads(content)
                             else:
                                 assistant_content_json = content
 
-                            # The actual text content is nested within
                             assistant_text = assistant_content_json.get('content', '')
                             full_response += assistant_text
                             if isinstance(assistant_text, str):
                                 if '</ask>' in assistant_text or '</complete>' in assistant_text or '</web-browser-takeover>' in assistant_text:
-                                   if '</ask>' in assistant_text:
-                                       xml_tool = 'ask'
-                                   elif '</complete>' in assistant_text:
-                                       xml_tool = 'complete'
-                                   elif '</web-browser-takeover>' in assistant_text:
-                                       xml_tool = 'web-browser-takeover'
+                                    if '</ask>' in assistant_text:
+                                        xml_tool = 'ask'
+                                    elif '</complete>' in assistant_text:
+                                        xml_tool = 'complete'
+                                    elif '</web-browser-takeover>' in assistant_text:
+                                        xml_tool = 'web-browser-takeover'
 
-                                   last_tool_call = xml_tool
-                                   logger.info(f"Agent used XML tool: {xml_tool}")
-                                   trace.event(name="agent_used_xml_tool", level="DEFAULT", status_message=(f"Agent used XML tool: {xml_tool}"))
+                                    last_tool_call = xml_tool
+                                    logger.info(f"Agent used XML tool: {xml_tool}")
+                                    trace.event(name="agent_used_xml_tool", level="DEFAULT", status_message=(f"Agent used XML tool: {xml_tool}"))
                         except json.JSONDecodeError:
-                            # Handle cases where content might not be valid JSON
                             logger.warning(f"Warning: Could not parse assistant content JSON: {chunk.get('content')}")
                             trace.event(name="warning_could_not_parse_assistant_content_json", level="WARNING", status_message=(f"Warning: Could not parse assistant content JSON: {chunk.get('content')}"))
                         except Exception as e:
@@ -557,35 +1086,46 @@ async def run_agent(
 
                     yield chunk
 
-                # Check if we should stop based on the last tool call or error
                 if error_detected:
                     logger.info(f"Stopping due to error detected in response")
                     trace.event(name="stopping_due_to_error_detected_in_response", level="DEFAULT", status_message=(f"Stopping due to error detected in response"))
                     generation.end(output=full_response, status_message="error_detected", level="ERROR")
+=======
+                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover']:
+                        if generation:
+                            generation.end(output=full_response, status_message="agent_stopped")
+                        continue_execution = False
+
+                except Exception as e:
+                    error_msg = f"Error during response streaming: {str(e)}"
+                    if generation:
+                        generation.end(output=full_response, status_message=error_msg, level="ERROR")
+                    yield {
+                        "type": "status",
+                        "status": "error",
+                        "message": error_msg
+                    }
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     break
                     
-                if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover']:
-                    logger.info(f"Agent decided to stop with tool: {last_tool_call}")
-                    trace.event(name="agent_decided_to_stop_with_tool", level="DEFAULT", status_message=(f"Agent decided to stop with tool: {last_tool_call}"))
-                    generation.end(output=full_response, status_message="agent_stopped")
-                    continue_execution = False
-
             except Exception as e:
-                # Just log the error and re-raise to stop all iterations
+<<<<<<< HEAD
                 error_msg = f"Error during response streaming: {str(e)}"
                 logger.error(f"Error: {error_msg}")
                 trace.event(name="error_during_response_streaming", level="ERROR", status_message=(f"Error during response streaming: {str(e)}"))
                 generation.end(output=full_response, status_message=error_msg, level="ERROR")
+=======
+                error_msg = f"Error running thread: {str(e)}"
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                 yield {
                     "type": "status",
                     "status": "error",
                     "message": error_msg
                 }
-                # Stop execution immediately on any error
                 break
+<<<<<<< HEAD
                 
         except Exception as e:
-            # Just log the error and re-raise to stop all iterations
             error_msg = f"Error running thread: {str(e)}"
             logger.error(f"Error: {error_msg}")
             trace.event(name="error_running_thread", level="ERROR", status_message=(f"Error running thread: {str(e)}"))
@@ -594,289 +1134,60 @@ async def run_agent(
                 "status": "error",
                 "message": error_msg
             }
-            # Stop execution immediately on any error
             break
         generation.end(output=full_response)
 
-    langfuse.flush() # Flush Langfuse events at the end of the run
-  
+    langfuse.flush()
+=======
+            
+            if generation:
+                generation.end(output=full_response)
+
+        asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
 
 
-# # TESTING
-
-# async def test_agent():
-#     """Test function to run the agent with a sample query"""
-#     from agentpress.thread_manager import ThreadManager
-#     from services.supabase import DBConnection
-
-#     # Initialize ThreadManager
-#     thread_manager = ThreadManager()
-
-#     # Create a test thread directly with Postgres function
-#     client = await DBConnection().client
-
-#     try:
-#         # Get user's personal account
-#         account_result = await client.rpc('get_personal_account').execute()
-
-#         # if not account_result.data:
-#         #     print("Error: No personal account found")
-#         #     return
-
-#         account_id = "a5fe9cb6-4812-407e-a61c-fe95b7320c59"
-
-#         if not account_id:
-#             print("Error: Could not get account ID")
-#             return
-
-#         # Find or create a test project in the user's account
-#         project_result = await client.table('projects').select('*').eq('name', 'test11').eq('account_id', account_id).execute()
-
-#         if project_result.data and len(project_result.data) > 0:
-#             # Use existing test project
-#             project_id = project_result.data[0]['project_id']
-#             print(f"\n🔄 Using existing test project: {project_id}")
-#         else:
-#             # Create new test project if none exists
-#             project_result = await client.table('projects').insert({
-#                 "name": "test11",
-#                 "account_id": account_id
-#             }).execute()
-#             project_id = project_result.data[0]['project_id']
-#             print(f"\n✨ Created new test project: {project_id}")
-
-#         # Create a thread for this project
-#         thread_result = await client.table('threads').insert({
-#             'project_id': project_id,
-#             'account_id': account_id
-#         }).execute()
-#         thread_data = thread_result.data[0] if thread_result.data else None
-
-#         if not thread_data:
-#             print("Error: No thread data returned")
-#             return
-
-#         thread_id = thread_data['thread_id']
-#     except Exception as e:
-#         print(f"Error setting up thread: {str(e)}")
-#         return
-
-#     print(f"\n🤖 Agent Thread Created: {thread_id}\n")
-
-#     # Interactive message input loop
-#     while True:
-#         # Get user input
-#         user_message = input("\n💬 Enter your message (or 'exit' to quit): ")
-#         if user_message.lower() == 'exit':
-#             break
-
-#         if not user_message.strip():
-#             print("\n🔄 Running agent...\n")
-#             await process_agent_response(thread_id, project_id, thread_manager)
-#             continue
-
-#         # Add the user message to the thread
-#         await thread_manager.add_message(
-#             thread_id=thread_id,
-#             type="user",
-#             content={
-#                 "role": "user",
-#                 "content": user_message
-#             },
-#             is_llm_message=True
-#         )
-
-#         print("\n🔄 Running agent...\n")
-#         await process_agent_response(thread_id, project_id, thread_manager)
-
-#     print("\n👋 Test completed. Goodbye!")
-
-# async def process_agent_response(
-#     thread_id: str,
-#     project_id: str,
-#     thread_manager: ThreadManager,
-#     stream: bool = True,
-#     model_name: str = "anthropic/claude-3-7-sonnet-latest",
-#     enable_thinking: Optional[bool] = False,
-#     reasoning_effort: Optional[str] = 'low',
-#     enable_context_manager: bool = True
-# ):
-#     """Process the streaming response from the agent."""
-#     chunk_counter = 0
-#     current_response = ""
-#     tool_usage_counter = 0 # Renamed from tool_call_counter as we track usage via status
-
-#     # Create a test sandbox for processing with a unique test prefix to avoid conflicts with production sandboxes
-#     sandbox_pass = str(uuid4())
-#     sandbox = create_sandbox(sandbox_pass)
-
-#     # Store the original ID so we can refer to it
-#     original_sandbox_id = sandbox.id
-
-#     # Generate a clear test identifier
-#     test_prefix = f"test_{uuid4().hex[:8]}_"
-#     logger.info(f"Created test sandbox with ID {original_sandbox_id} and test prefix {test_prefix}")
-
-#     # Log the sandbox URL for debugging
-#     print(f"\033[91mTest sandbox created: {str(sandbox.get_preview_link(6080))}/vnc_lite.html?password={sandbox_pass}\033[0m")
-
-#     async for chunk in run_agent(
-#         thread_id=thread_id,
-#         project_id=project_id,
-#         sandbox=sandbox,
-#         stream=stream,
-#         thread_manager=thread_manager,
-#         native_max_auto_continues=25,
-#         model_name=model_name,
-#         enable_thinking=enable_thinking,
-#         reasoning_effort=reasoning_effort,
-#         enable_context_manager=enable_context_manager
-#     ):
-#         chunk_counter += 1
-#         # print(f"CHUNK: {chunk}") # Uncomment for debugging
-
-#         if chunk.get('type') == 'assistant':
-#             # Try parsing the content JSON
-#             try:
-#                 # Handle content as string or object
-#                 content = chunk.get('content', '{}')
-#                 if isinstance(content, str):
-#                     content_json = json.loads(content)
-#                 else:
-#                     content_json = content
-
-#                 actual_content = content_json.get('content', '')
-#                 # Print the actual assistant text content as it comes
-#                 if actual_content:
-#                      # Check if it contains XML tool tags, if so, print the whole tag for context
-#                     if '<' in actual_content and '>' in actual_content:
-#                          # Avoid printing potentially huge raw content if it's not just text
-#                          if len(actual_content) < 500: # Heuristic limit
-#                             print(actual_content, end='', flush=True)
-#                          else:
-#                              # Maybe just print a summary if it's too long or contains complex XML
-#                              if '</ask>' in actual_content: print("<ask>...</ask>", end='', flush=True)
-#                              elif '</complete>' in actual_content: print("<complete>...</complete>", end='', flush=True)
-#                              else: print("<tool_call>...</tool_call>", end='', flush=True) # Generic case
-#                     else:
-#                         # Regular text content
-#                          print(actual_content, end='', flush=True)
-#                     current_response += actual_content # Accumulate only text part
-#             except json.JSONDecodeError:
-#                  # If content is not JSON (e.g., just a string chunk), print directly
-#                  raw_content = chunk.get('content', '')
-#                  print(raw_content, end='', flush=True)
-#                  current_response += raw_content
-#             except Exception as e:
-#                  print(f"\nError processing assistant chunk: {e}\n")
-
-#         elif chunk.get('type') == 'tool': # Updated from 'tool_result'
-#             # Add timestamp and format tool result nicely
-#             tool_name = "UnknownTool" # Try to get from metadata if available
-#             result_content = "No content"
-
-#             # Parse metadata - handle both string and dict formats
-#             metadata = chunk.get('metadata', {})
-#             if isinstance(metadata, str):
-#                 try:
-#                     metadata = json.loads(metadata)
-#                 except json.JSONDecodeError:
-#                     metadata = {}
-
-#             linked_assistant_msg_id = metadata.get('assistant_message_id')
-#             parsing_details = metadata.get('parsing_details')
-#             if parsing_details:
-#                 tool_name = parsing_details.get('xml_tag_name', 'UnknownTool') # Get name from parsing details
-
-#             try:
-#                 # Content is a JSON string or object
-#                 content = chunk.get('content', '{}')
-#                 if isinstance(content, str):
-#                     content_json = json.loads(content)
-#                 else:
-#                     content_json = content
-
-#                 # The actual tool result is nested inside content.content
-#                 tool_result_str = content_json.get('content', '')
-#                  # Extract the actual tool result string (remove outer <tool_result> tag if present)
-#                 match = re.search(rf'<{tool_name}>(.*?)</{tool_name}>', tool_result_str, re.DOTALL)
-#                 if match:
-#                     result_content = match.group(1).strip()
-#                     # Try to parse the result string itself as JSON for pretty printing
-#                     try:
-#                         result_obj = json.loads(result_content)
-#                         result_content = json.dumps(result_obj, indent=2)
-#                     except json.JSONDecodeError:
-#                          # Keep as string if not JSON
-#                          pass
-#                 else:
-#                      # Fallback if tag extraction fails
-#                      result_content = tool_result_str
-
-#             except json.JSONDecodeError:
-#                 result_content = chunk.get('content', 'Error parsing tool content')
-#             except Exception as e:
-#                 result_content = f"Error processing tool chunk: {e}"
-
-#             print(f"\n\n🛠️  TOOL RESULT [{tool_name}] → {result_content}")
-
-#         elif chunk.get('type') == 'status':
-#             # Log tool status changes
-#             try:
-#                 # Handle content as string or object
-#                 status_content = chunk.get('content', '{}')
-#                 if isinstance(status_content, str):
-#                     status_content = json.loads(status_content)
-
-#                 status_type = status_content.get('status_type')
-#                 function_name = status_content.get('function_name', '')
-#                 xml_tag_name = status_content.get('xml_tag_name', '') # Get XML tag if available
-#                 tool_name = xml_tag_name or function_name # Prefer XML tag name
-
-#                 if status_type == 'tool_started' and tool_name:
-#                     tool_usage_counter += 1
-#                     print(f"\n⏳ TOOL STARTING #{tool_usage_counter} [{tool_name}]")
-#                     print("  " + "-" * 40)
-#                     # Return to the current content display
-#                     if current_response:
-#                         print("\nContinuing response:", flush=True)
-#                         print(current_response, end='', flush=True)
-#                 elif status_type == 'tool_completed' and tool_name:
-#                      status_emoji = "✅"
-#                      print(f"\n{status_emoji} TOOL COMPLETED: {tool_name}")
-#                 elif status_type == 'finish':
-#                      finish_reason = status_content.get('finish_reason', '')
-#                      if finish_reason:
-#                          print(f"\n📌 Finished: {finish_reason}")
-#                 # else: # Print other status types if needed for debugging
-#                 #    print(f"\nℹ️ STATUS: {chunk.get('content')}")
-
-#             except json.JSONDecodeError:
-#                  print(f"\nWarning: Could not parse status content JSON: {chunk.get('content')}")
-#             except Exception as e:
-#                 print(f"\nError processing status chunk: {e}")
-
-
-#         # Removed elif chunk.get('type') == 'tool_call': block
-
-#     # Update final message
-#     print(f"\n\n✅ Agent run completed with {tool_usage_counter} tool executions")
-
-#     # Try to clean up the test sandbox if possible
-#     try:
-#         # Attempt to delete/archive the sandbox to clean up resources
-#         # Note: Actual deletion may depend on the Daytona SDK's capabilities
-#         logger.info(f"Attempting to clean up test sandbox {original_sandbox_id}")
-#         # If there's a method to archive/delete the sandbox, call it here
-#         # Example: daytona.archive_sandbox(sandbox.id)
-#     except Exception as e:
-#         logger.warning(f"Failed to clean up test sandbox {original_sandbox_id}: {str(e)}")
-
-# if __name__ == "__main__":
-#     import asyncio
-
-#     # Configure any environment variables or setup needed for testing
-#     load_dotenv()  # Ensure environment variables are loaded
-
-#     # Run the test function
-#     asyncio.run(test_agent())
+async def run_agent(
+    thread_id: str,
+    project_id: str,
+    stream: bool,
+    thread_manager: Optional[ThreadManager] = None,
+    native_max_auto_continues: int = 25,
+    max_iterations: int = 100,
+    model_name: str = "openai/gpt-5-mini",
+    enable_thinking: Optional[bool] = False,
+    reasoning_effort: Optional[str] = 'low',
+    enable_context_manager: bool = True,
+    agent_config: Optional[dict] = None,    
+    trace: Optional[StatefulTraceClient] = None,
+    is_agent_builder: Optional[bool] = False,
+    target_agent_id: Optional[str] = None
+):
+    effective_model = model_name
+    if model_name == "openai/gpt-5-mini" and agent_config and agent_config.get('model'):
+        effective_model = agent_config['model']
+        logger.debug(f"Using model from agent config: {effective_model} (no user selection)")
+    elif model_name != "openai/gpt-5-mini":
+        logger.debug(f"Using user-selected model: {effective_model}")
+    else:
+        logger.debug(f"Using default model: {effective_model}")
+    
+    config = AgentConfig(
+        thread_id=thread_id,
+        project_id=project_id,
+        stream=stream,
+        native_max_auto_continues=native_max_auto_continues,
+        max_iterations=max_iterations,
+        model_name=effective_model,
+        enable_thinking=enable_thinking,
+        reasoning_effort=reasoning_effort,
+        enable_context_manager=enable_context_manager,
+        agent_config=agent_config,
+        trace=trace,
+        is_agent_builder=is_agent_builder,
+        target_agent_id=target_agent_id
+    )
+    
+    runner = AgentRunner(config)
+    async for chunk in runner.run():
+        yield chunk
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc

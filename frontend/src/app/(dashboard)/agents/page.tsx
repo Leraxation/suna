@@ -1,27 +1,33 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, AlertCircle, Loader2, File, Bot } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { UpdateAgentDialog } from './_components/update-agent-dialog';
-import { useAgents, useUpdateAgent, useDeleteAgent, useOptimisticAgentUpdate, useCreateAgent } from '@/hooks/react-query/agents/use-agents';
-import { SearchAndFilters } from './_components/search-and-filters';
-import { ResultsInfo } from './_components/results-info';
-import { EmptyState } from './_components/empty-state';
-import { AgentsGrid } from './_components/agents-grid';
-import { AgentsList } from './_components/agents-list';
-import { LoadingState } from './_components/loading-state';
-import { Pagination } from './_components/pagination';
-import { useRouter } from 'next/navigation';
-import { DEFAULT_AGENTPRESS_TOOLS } from './_data/tools';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+
+import { useAgents, useUpdateAgent, useDeleteAgent, useOptimisticAgentUpdate, useAgentDeletionState } from '@/hooks/react-query/agents/use-agents';
+import { useMarketplaceTemplates, useInstallTemplate, useMyTemplates, useUnpublishTemplate, usePublishTemplate, useCreateTemplate, useDeleteTemplate } from '@/hooks/react-query/secure-mcp/use-secure-mcp';
+import { useFeatureFlag } from '@/lib/feature-flags';
+import { useAuth } from '@/components/AuthProvider';
+
+import { StreamlinedInstallDialog } from '@/components/agents/installation/streamlined-install-dialog';
+import type { MarketplaceTemplate } from '@/components/agents/installation/types';
+
 import { AgentsParams } from '@/hooks/react-query/agents/utils';
-import { useFeatureFlag, useFeatureFlags } from '@/lib/feature-flags';
-import { generateRandomAvatar } from './_utils/_avatar-generator';
-import { Skeleton } from '@/components/ui/skeleton';
+
+import { AgentsPageHeader } from '@/components/agents/custom-agents-page/header';
+import { TabsNavigation } from '@/components/agents/custom-agents-page/tabs-navigation';
+import { MyAgentsTab } from '@/components/agents/custom-agents-page/my-agents-tab';
+import { MarketplaceTab } from '@/components/agents/custom-agents-page/marketplace-tab';
+import { PublishDialog } from '@/components/agents/custom-agents-page/publish-dialog';
+import { LoadingSkeleton } from '@/components/agents/custom-agents-page/loading-skeleton';
+import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
+import { MarketplaceAgentPreviewDialog } from '@/components/agents/marketplace-agent-preview-dialog';
+import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dialog';
+import { AgentCountLimitError } from '@/lib/api';
 
 type ViewMode = 'grid' | 'list';
-type SortOption = 'name' | 'created_at' | 'updated_at' | 'tools_count';
+type AgentSortOption = 'name' | 'created_at' | 'updated_at' | 'tools_count';
+type MarketplaceSortOption = 'newest' | 'popular' | 'most_downloaded' | 'name';
 type SortOrder = 'asc' | 'desc';
 
 interface FilterOptions {
@@ -31,9 +37,18 @@ interface FilterOptions {
   selectedTools: string[];
 }
 
+interface PublishDialogData {
+  templateId: string;
+  templateName: string;
+}
+
 export default function AgentsPage() {
-  const { enabled: customAgentsEnabled, loading: flagLoading } = useFeatureFlag("custom_agents");
+  const { user } = useAuth();
+  const { enabled: customAgentsEnabled, loading: agentsFlagLoading } = useFeatureFlag("custom_agents");
+  const { enabled: agentMarketplaceEnabled, loading: marketplaceFlagLoading } = useFeatureFlag("agent_marketplace");
   const router = useRouter();
+  const flagLoading = agentsFlagLoading || marketplaceFlagLoading;
+
   useEffect(() => {
     if (!flagLoading && !customAgentsEnabled) {
       router.replace("/dashboard");
@@ -43,103 +58,212 @@ export default function AgentsPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   
-  
-  // Server-side parameters
-  const [page, setPage] = useState(1);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('created_at');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [filters, setFilters] = useState<FilterOptions>({
+  const [agentsPage, setAgentsPage] = useState(1);
+  const [agentsSearchQuery, setAgentsSearchQuery] = useState('');
+  const [agentsSortBy, setAgentsSortBy] = useState<AgentSortOption>('created_at');
+  const [agentsSortOrder, setAgentsSortOrder] = useState<SortOrder>('desc');
+  const [agentsFilters, setAgentsFilters] = useState<FilterOptions>({
     hasDefaultAgent: false,
     hasMcpTools: false,
     hasAgentpressTools: false,
     selectedTools: []
   });
 
-  // Build query parameters
-  const queryParams: AgentsParams = useMemo(() => {
+  const [marketplacePage, setMarketplacePage] = useState(1);
+  const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
+  const [marketplaceSelectedTags, setMarketplaceSelectedTags] = useState<string[]>([]);
+  const [marketplaceSortBy, setMarketplaceSortBy] = useState<MarketplaceSortOption>('newest');
+  const [installingItemId, setInstallingItemId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<MarketplaceTemplate | null>(null);
+  const [showInstallDialog, setShowInstallDialog] = useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [marketplaceFilter, setMarketplaceFilter] = useState<'all' | 'kortix' | 'community' | 'mine'>('all');
+
+  const [templatesActioningId, setTemplatesActioningId] = useState<string | null>(null);
+  const [publishDialog, setPublishDialog] = useState<PublishDialogData | null>(null);
+
+  const [publishingAgentId, setPublishingAgentId] = useState<string | null>(null);
+  const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
+  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [agentLimitError, setAgentLimitError] = useState<AgentCountLimitError | null>(null);
+
+  const activeTab = useMemo(() => {
+    return searchParams.get('tab') || 'my-agents';
+  }, [searchParams]);
+
+  const agentsQueryParams: AgentsParams = useMemo(() => {
     const params: AgentsParams = {
-      page,
+      page: agentsPage,
       limit: 20,
-      search: searchQuery || undefined,
-      sort_by: sortBy,
-      sort_order: sortOrder,
+      search: agentsSearchQuery || undefined,
+      sort_by: agentsSortBy,
+      sort_order: agentsSortOrder,
     };
 
-    if (filters.hasDefaultAgent) {
+    if (agentsFilters.hasDefaultAgent) {
       params.has_default = true;
     }
-    if (filters.hasMcpTools) {
+    if (agentsFilters.hasMcpTools) {
       params.has_mcp_tools = true;
     }
-    if (filters.hasAgentpressTools) {
+    if (agentsFilters.hasAgentpressTools) {
       params.has_agentpress_tools = true;
     }
-    if (filters.selectedTools.length > 0) {
-      params.tools = filters.selectedTools.join(',');
+    if (agentsFilters.selectedTools.length > 0) {
+      params.tools = agentsFilters.selectedTools.join(',');
     }
 
     return params;
-  }, [page, searchQuery, sortBy, sortOrder, filters]);
+  }, [agentsPage, agentsSearchQuery, agentsSortBy, agentsSortOrder, agentsFilters]);
 
-  const { 
-    data: agentsResponse, 
-    isLoading, 
-    error,
-    refetch: loadAgents 
-  } = useAgents(queryParams);
+  const marketplaceQueryParams = useMemo(() => ({
+    limit: 20,
+    offset: (marketplacePage - 1) * 20,
+    search: marketplaceSearchQuery || undefined,
+    tags: marketplaceSelectedTags.length > 0 ? marketplaceSelectedTags.join(',') : undefined,
+  }), [marketplacePage, marketplaceSearchQuery, marketplaceSelectedTags]);
+
+  const { data: agentsResponse, isLoading: agentsLoading, error: agentsError, refetch: loadAgents } = useAgents(agentsQueryParams);
+  const { data: marketplaceTemplates, isLoading: marketplaceLoading } = useMarketplaceTemplates(marketplaceQueryParams);
+  const { data: myTemplates, isLoading: templatesLoading, error: templatesError } = useMyTemplates();
+
+  console.log(marketplaceTemplates);
   
   const updateAgentMutation = useUpdateAgent();
-  const deleteAgentMutation = useDeleteAgent();
-  const createAgentMutation = useCreateAgent();
   const { optimisticallyUpdateAgent, revertOptimisticUpdate } = useOptimisticAgentUpdate();
+  const { deleteAgent, isDeletingAgent, isDeleting } = useAgentDeletionState();
+  const installTemplateMutation = useInstallTemplate();
+  const unpublishMutation = useUnpublishTemplate();
+  const publishMutation = usePublishTemplate();
+  const createTemplateMutation = useCreateTemplate();
+  const deleteTemplateMutation = useDeleteTemplate();
 
   const agents = agentsResponse?.agents || [];
-  const pagination = agentsResponse?.pagination;
+  const agentsPagination = agentsResponse?.pagination;
 
-  // Get all tools for filter options (we'll need to fetch this separately or compute from current page)
-  const allTools = useMemo(() => {
-    const toolsSet = new Set<string>();
-    agents.forEach(agent => {
-      agent.configured_mcps?.forEach(mcp => toolsSet.add(`mcp:${mcp.name}`));
-      Object.entries(agent.agentpress_tools || {}).forEach(([tool, toolData]) => {
-        if (toolData && typeof toolData === 'object' && 'enabled' in toolData && toolData.enabled) {
-          toolsSet.add(`agentpress:${tool}`);
+  const { kortixTeamItems, communityItems, mineItems } = useMemo(() => {
+    const kortixItems: MarketplaceTemplate[] = [];
+    const communityItems: MarketplaceTemplate[] = [];
+    const mineItems: MarketplaceTemplate[] = [];
+
+    if (marketplaceTemplates) {
+      marketplaceTemplates.forEach(template => {
+        const item: MarketplaceTemplate = {
+          id: template.template_id,
+          creator_id: template.creator_id,
+          name: template.name,
+          description: template.description,
+          tags: template.tags || [],
+          download_count: template.download_count || 0,
+          creator_name: template.creator_name || 'Anonymous',
+          created_at: template.created_at,
+          marketplace_published_at: template.marketplace_published_at,
+          profile_image_url: template.profile_image_url,
+          template_id: template.template_id,
+          is_kortix_team: template.is_kortix_team,
+          mcp_requirements: template.mcp_requirements,
+          metadata: template.metadata,
+        };
+
+        const matchesSearch = !marketplaceSearchQuery.trim() || (() => {
+          const searchLower = marketplaceSearchQuery.toLowerCase();
+          return item.name.toLowerCase().includes(searchLower) ||
+                 item.description?.toLowerCase().includes(searchLower) ||
+                 item.tags.some(tag => tag.toLowerCase().includes(searchLower)) ||
+                 item.creator_name?.toLowerCase().includes(searchLower);
+        })();
+
+        if (!matchesSearch) return;
+
+        if (user?.id === template.creator_id) {
+          mineItems.push(item);
+        }
+        
+        if (template.is_kortix_team === true) {
+          kortixItems.push(item);
+        } else {
+          communityItems.push(item);
         }
       });
-    });
-    return Array.from(toolsSet).sort();
-  }, [agents]);
+    }
 
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (filters.hasDefaultAgent) count++;
-    if (filters.hasMcpTools) count++;
-    if (filters.hasAgentpressTools) count++;
-    count += filters.selectedTools.length;
-    return count;
-  }, [filters]);
+    const sortItems = (items: MarketplaceTemplate[]) =>
+      items.sort((a, b) => {
+        switch (marketplaceSortBy) {
+          case 'newest':
+            return new Date(b.marketplace_published_at || b.created_at).getTime() - 
+                   new Date(a.marketplace_published_at || a.created_at).getTime();
+          case 'popular':
+          case 'most_downloaded':
+            return b.download_count - a.download_count;
+          case 'name':
+            return a.name.localeCompare(b.name);
+          default:
+            return 0;
+        }
+      });
 
-  const clearFilters = () => {
-    setSearchQuery('');
-    setFilters({
+    return {
+      kortixTeamItems: sortItems(kortixItems),
+      communityItems: sortItems(communityItems),
+      mineItems: sortItems(mineItems)
+    };
+  }, [marketplaceTemplates, marketplaceSortBy, user?.id, marketplaceSearchQuery]);
+
+  const allMarketplaceItems = useMemo(() => {
+    if (marketplaceFilter === 'kortix') {
+      return kortixTeamItems;
+    } else if (marketplaceFilter === 'community') {
+      return communityItems;
+    } else if (marketplaceFilter === 'mine') {
+      return mineItems;
+    }
+    return [...kortixTeamItems, ...communityItems];
+  }, [kortixTeamItems, communityItems, mineItems, marketplaceFilter]);
+
+  const handleTabChange = (newTab: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', newTab);
+    router.replace(`${pathname}?${params.toString()}`);
+  };
+
+
+  const clearAgentsFilters = () => {
+    setAgentsSearchQuery('');
+    setAgentsFilters({
       hasDefaultAgent: false,
       hasMcpTools: false,
       hasAgentpressTools: false,
       selectedTools: []
     });
-    setPage(1);
+    setAgentsPage(1);
   };
 
-  // Reset page when search or filters change
-  React.useEffect(() => {
-    setPage(1);
-  }, [searchQuery, sortBy, sortOrder, filters]);
+  useEffect(() => {
+    setAgentsPage(1);
+  }, [agentsSearchQuery, agentsSortBy, agentsSortOrder, agentsFilters]);
+
+  useEffect(() => {
+    setMarketplacePage(1);
+  }, [marketplaceSearchQuery, marketplaceSelectedTags, marketplaceSortBy]);
+
+  useEffect(() => {
+    const agentId = searchParams.get('agent');
+    if (agentId && allMarketplaceItems.length > 0) {
+      const sharedAgent = allMarketplaceItems.find(agent => agent.id === agentId);
+      if (sharedAgent) {
+        setSelectedItem(sharedAgent);
+        setShowPreviewDialog(true);
+      }
+    }
+  }, [searchParams, allMarketplaceItems]);
 
   const handleDeleteAgent = async (agentId: string) => {
     try {
-      await deleteAgentMutation.mutateAsync(agentId);
+      await deleteAgent(agentId);
     } catch (error) {
       console.error('Error deleting agent:', error);
     }
@@ -163,160 +287,380 @@ export default function AgentsPage() {
     setEditDialogOpen(true);
   };
 
-  const handleCreateNewAgent = async () => {
-    try {
-      const { avatar, avatar_color } = generateRandomAvatar();
-      
-      const defaultAgentData = {
-        name: 'New Agent',
-        description: 'A newly created agent',
-        system_prompt: 'You are a helpful assistant. Provide clear, accurate, and helpful responses to user queries.',
-        avatar,
-        avatar_color,
-        configured_mcps: [],
-        agentpress_tools: Object.fromEntries(
-          Object.entries(DEFAULT_AGENTPRESS_TOOLS).map(([key, value]) => [
-            key, 
-            { enabled: value.enabled, description: value.description }
-          ])
-        ),
-        is_default: false,
-      };
+  const handleCreateNewAgent = useCallback(() => {
+    setShowNewAgentDialog(true);
+  }, []);
 
-      const newAgent = await createAgentMutation.mutateAsync(defaultAgentData);
-      router.push(`/agents/new/${newAgent.agent_id}`);
-    } catch (error) {
-      console.error('Error creating agent:', error);
+  const handleInstallClick = (item: MarketplaceTemplate, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
     }
+    setSelectedItem(item);
+    setShowInstallDialog(true);
+  };
+
+  const handlePreviewClose = () => {
+    setShowPreviewDialog(false);
+    setSelectedItem(null);
+    
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.has('agent')) {
+      currentUrl.searchParams.delete('agent');
+      router.replace(currentUrl.pathname + (currentUrl.searchParams.toString() ? '?' + currentUrl.searchParams.toString() : ''), { scroll: false });
+    }
+  };
+
+  const handlePreviewInstall = (agent: MarketplaceTemplate) => {
+    setShowPreviewDialog(false);
+    setSelectedItem(agent);
+    setShowInstallDialog(true);
+  };
+
+  const handleAgentPreview = (agent: MarketplaceTemplate) => {
+    setSelectedItem(agent);
+    setShowPreviewDialog(true);
+    
+    // Update URL with agent parameter for sharing
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('agent', agent.id);
+    currentUrl.searchParams.set('tab', 'marketplace');
+    router.replace(currentUrl.toString(), { scroll: false });
+  };
+
+  const handleInstall = async (
+    item: MarketplaceTemplate, 
+    instanceName?: string, 
+    profileMappings?: Record<string, string>, 
+    customMcpConfigs?: Record<string, Record<string, any>>
+  ) => {
+    setInstallingItemId(item.id);
+    
+    try {
+      if (!instanceName || instanceName.trim() === '') {
+        toast.error('Please provide a name for the agent');
+        return;
+      }
+
+      const regularRequirements = item.mcp_requirements?.filter(req => 
+        !req.custom_type
+      ) || [];
+      const missingProfiles = regularRequirements.filter(req => {
+        const profileKey = req.source === 'trigger' && req.trigger_index !== undefined
+          ? `${req.qualified_name}_trigger_${req.trigger_index}`
+          : req.qualified_name;
+        return !profileMappings || !profileMappings[profileKey] || profileMappings[profileKey].trim() === '';
+      });
+      
+      if (missingProfiles.length > 0) {
+        const missingNames = missingProfiles.map(req => req.display_name).join(', ');
+        toast.error(`Please select credential profiles for: ${missingNames}`);
+        return;
+      }
+
+      const customRequirements = item.mcp_requirements?.filter(req => 
+        req.custom_type
+      ) || [];
+      const missingCustomConfigs = customRequirements.filter(req => 
+        !customMcpConfigs || !customMcpConfigs[req.qualified_name] || 
+        req.required_config.some(field => !customMcpConfigs[req.qualified_name][field]?.trim())
+      );
+      
+      if (missingCustomConfigs.length > 0) {
+        const missingNames = missingCustomConfigs.map(req => req.display_name).join(', ');
+        toast.error(`Please provide all required configuration for: ${missingNames}`);
+        return;
+      }
+
+      const result = await installTemplateMutation.mutateAsync({
+        template_id: item.template_id,
+        instance_name: instanceName,
+        profile_mappings: profileMappings,
+        custom_mcp_configs: customMcpConfigs
+      });
+
+      if (result.status === 'installed') {
+        toast.success(`Agent "${instanceName}" installed successfully!`);
+        setShowInstallDialog(false);
+        handleTabChange('my-agents');
+      } else if (result.status === 'configs_required') {
+        if (result.missing_regular_credentials && result.missing_regular_credentials.length > 0) {
+          const updatedRequirements = [
+            ...(item.mcp_requirements || []),
+            ...result.missing_regular_credentials.map((cred: any) => ({
+              qualified_name: cred.qualified_name,
+              display_name: cred.display_name,
+              enabled_tools: cred.enabled_tools || [],
+              required_config: cred.required_config || [],
+              custom_type: cred.custom_type,
+              toolkit_slug: cred.toolkit_slug,
+              app_slug: cred.app_slug,
+              source: cred.source,
+              trigger_index: cred.trigger_index
+            }))
+          ];
+          
+          setSelectedItem({
+            ...item,
+            mcp_requirements: updatedRequirements
+          });
+          
+          toast.warning('Additional configurations required. Please complete the setup.');
+          return;
+        } else {
+          toast.error('Please provide all required configurations');
+          return;
+        }
+      } else {
+        toast.error('Unexpected response from server. Please try again.');
+        return;
+      }
+    } catch (error: any) {
+      console.error('Installation error:', error);
+
+      if (error instanceof AgentCountLimitError) {
+        setAgentLimitError(error);
+        setShowAgentLimitDialog(true);
+        return;
+      }
+
+      if (error.message?.includes('already in your library')) {
+        toast.error('This agent is already in your library');
+      } else if (error.message?.includes('Credential profile not found')) {
+        toast.error('One or more selected credential profiles could not be found. Please refresh and try again.');
+      } else if (error.message?.includes('Missing credential profile')) {
+        toast.error('Please select credential profiles for all required services');
+      } else if (error.message?.includes('Invalid credential profile')) {
+        toast.error('One or more selected credential profiles are invalid. Please select valid profiles.');
+      } else if (error.message?.includes('inactive')) {
+        toast.error('One or more selected credential profiles are inactive. Please select active profiles.');
+      } else if (error.message?.includes('Template not found')) {
+        toast.error('This agent template is no longer available');
+      } else if (error.message?.includes('Access denied')) {
+        toast.error('You do not have permission to install this agent');
+      } else {
+        toast.error(error.message || 'Failed to install agent. Please try again.');
+      }
+    } finally {
+      setInstallingItemId(null);
+    }
+  };
+
+  const getItemStyling = (item: MarketplaceTemplate) => {
+    return {
+      avatar: '🤖',
+      color: '#6366f1',
+    };
+  };
+
+  const handleUnpublish = async (templateId: string, templateName: string) => {
+    try {
+      setTemplatesActioningId(templateId);
+      await unpublishMutation.mutateAsync(templateId);
+      toast.success(`${templateName} has been unpublished from the marketplace`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to unpublish template');
+    } finally {
+      setTemplatesActioningId(null);
+    }
+  };
+
+  const handleDeleteTemplate = async (item: MarketplaceTemplate, e?: React.MouseEvent) => {
+    try {
+      setTemplatesActioningId(item.template_id);
+      await deleteTemplateMutation.mutateAsync(item.template_id);
+      toast.success(`"${item.name}" has been permanently deleted from the marketplace`, {
+        description: 'The template is no longer available for installation.'
+      });
+    } catch (error: any) {
+      toast.error('Failed to delete template', {
+        description: error.message || 'Please try again later.'
+      });
+    } finally {
+      setTemplatesActioningId(null);
+    }
+  };
+
+  const openPublishDialog = (template: any) => {
+    setPublishDialog({
+      templateId: template.template_id,
+      templateName: template.name
+    });
+  };
+
+  const handleAgentPublish = (agent: any) => {
+    setPublishDialog({
+      templateId: agent.agent_id,
+      templateName: agent.name
+    });
+  };
+
+  const handlePublish = async () => {
+    if (!publishDialog) return;
+
+    try {
+      const isAgent = publishDialog.templateId.length > 20;
+      
+      if (isAgent) {
+        setPublishingAgentId(publishDialog.templateId);
+        
+        const result = await createTemplateMutation.mutateAsync({
+          agent_id: publishDialog.templateId,
+          make_public: true
+        });
+        
+        toast.success(`${publishDialog.templateName} has been published to the marketplace`);
+      } else {
+        setTemplatesActioningId(publishDialog.templateId);
+        
+        await publishMutation.mutateAsync({
+          template_id: publishDialog.templateId
+        });
+        
+        toast.success(`${publishDialog.templateName} has been published to the marketplace`);
+      }
+      
+      setPublishDialog(null);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to publish template');
+    } finally {
+      setTemplatesActioningId(null);
+      setPublishingAgentId(null);
+    }
+  };
+
+  const getTemplateStyling = (template: any) => {
+    return {
+      avatar: '🤖',
+      color: '#6366f1',
+    };
   };
 
   if (flagLoading) {
     return (
-      <div className="container max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Your Agents
-            </h1>
-            <p className="text-md text-muted-foreground max-w-2xl">
-              Create and manage your AI agents with custom instructions and tools
-            </p>
+      <div className="min-h-screen">
+        <div className="container max-w-7xl mx-auto px-4 py-8">
+          <AgentsPageHeader />
+        </div>
+        
+        <div className="sticky top-0 z-50 bg-background/95 backdrop-blur-md border-b border-border/40 shadow-sm">
+          <div className="container max-w-7xl mx-auto px-4 py-4">
+            <TabsNavigation activeTab={activeTab} onTabChange={handleTabChange} onCreateAgent={handleCreateNewAgent} />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="p-2 bg-neutral-100 dark:bg-sidebar rounded-2xl overflow-hidden group">
-              <div className="h-24 flex items-center justify-center relative bg-gradient-to-br from-opacity-90 to-opacity-100">
-                <Skeleton className="h-24 w-full rounded-xl" />
-              </div>
-              <div className="space-y-2 mt-4 mb-4">
-                <Skeleton className="h-6 w-32 rounded" />
-                <Skeleton className="h-4 w-24 rounded" />
-              </div>
-            </div>
-          ))}
+
+        <div className="container max-w-7xl mx-auto px-4 py-8">
+          <LoadingSkeleton />
         </div>
       </div>
     );
   }
+
   if (!customAgentsEnabled) {
     return null;
   }
 
-  if (error) {
-    return (
-      <div className="container mx-auto max-w-7xl px-4 py-8">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>
-            {error instanceof Error ? error.message : 'An error occurred loading agents'}
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
   return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
-      <div className="space-y-8">
-        <div className='w-full space-y-4 bg-gradient-to-b from-primary/10 to-primary/5 border rounded-xl h-60 flex items-center justify-center'>
-          <div className="space-y-4">
-            <div className="space-y-2 text-center">
-              <div className='flex items-center justify-center gap-2'>
-                <Bot className='h-6 w-6 text-primary' />
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                  Agents
-                </h1>
-              </div>
-              <p className="text-md text-muted-foreground max-w-2xl">
-                Create and manage your agents with custom instructions and tools
-              </p>
-            </div>
-            <SearchAndFilters
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              sortBy={sortBy}
-              setSortBy={setSortBy}
-              sortOrder={sortOrder}
-              setSortOrder={setSortOrder}
-              filters={filters}
-              setFilters={setFilters}
-              activeFiltersCount={activeFiltersCount}
-              clearFilters={clearFilters}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              allTools={allTools}
-            />
+    <div className="min-h-screen">
+      <div className="container mx-auto max-w-7xl px-4 py-8">
+        <AgentsPageHeader />
+      </div>
+      <div className="sticky top-0 z-50">
+        <div className="absolute inset-0 backdrop-blur-md" style={{
+          maskImage: 'linear-gradient(to bottom, black 0%, black 60%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 60%, transparent 100%)'
+        }}></div>
+        <div className="relative bg-gradient-to-b from-background/95 via-background/70 to-transparent">
+          <div className="container mx-auto max-w-7xl px-4 py-4">
+            <TabsNavigation activeTab={activeTab} onTabChange={handleTabChange} onCreateAgent={handleCreateNewAgent} />
           </div>
         </div>
-        <ResultsInfo
-          isLoading={isLoading}
-          totalAgents={pagination?.total || 0}
-          filteredCount={agents.length}
-          searchQuery={searchQuery}
-          activeFiltersCount={activeFiltersCount}
-          clearFilters={clearFilters}
-          currentPage={pagination?.page || 1}
-          totalPages={pagination?.pages || 1}
+      </div>
+      <div className="container mx-auto max-w-7xl px-4 py-2">
+        <div className="w-full min-h-[calc(100vh-300px)]">
+          {activeTab === "my-agents" && (
+            <MyAgentsTab
+              agentsSearchQuery={agentsSearchQuery}
+              setAgentsSearchQuery={setAgentsSearchQuery}
+              agentsLoading={agentsLoading}
+              agents={agents}
+              agentsPagination={agentsPagination}
+              viewMode={viewMode}
+              onCreateAgent={handleCreateNewAgent}
+              onEditAgent={handleEditAgent}
+              onDeleteAgent={handleDeleteAgent}
+              onToggleDefault={handleToggleDefault}
+              onClearFilters={clearAgentsFilters}
+              isDeletingAgent={isDeletingAgent}
+              setAgentsPage={setAgentsPage}
+              myTemplates={myTemplates}
+              templatesLoading={templatesLoading}
+              templatesError={templatesError}
+              templatesActioningId={templatesActioningId}
+              onPublish={openPublishDialog}
+              onUnpublish={handleUnpublish}
+              getTemplateStyling={getTemplateStyling}
+              onPublishAgent={handleAgentPublish}
+              publishingAgentId={publishingAgentId}
+            />
+          )}
+
+          {activeTab === "marketplace" && (
+            <MarketplaceTab
+              marketplaceSearchQuery={marketplaceSearchQuery}
+              setMarketplaceSearchQuery={setMarketplaceSearchQuery}
+              marketplaceFilter={marketplaceFilter}
+              setMarketplaceFilter={setMarketplaceFilter}
+              marketplaceLoading={marketplaceLoading}
+              allMarketplaceItems={allMarketplaceItems}
+              kortixTeamItems={kortixTeamItems}
+              communityItems={communityItems}
+              mineItems={mineItems}
+              installingItemId={installingItemId}
+              onInstallClick={handleInstallClick}
+              onDeleteTemplate={handleDeleteTemplate}
+              getItemStyling={getItemStyling}
+              currentUserId={user?.id}
+              onAgentPreview={handleAgentPreview}
+            />
+          )}
+        </div>
+
+        <PublishDialog
+          publishDialog={publishDialog}
+          templatesActioningId={templatesActioningId}
+          onClose={() => setPublishDialog(null)}
+          onPublish={handlePublish}
         />
 
-        {isLoading ? (
-          <LoadingState viewMode={viewMode} />
-        ) : agents.length === 0 ? (
-          <EmptyState
-            hasAgents={(pagination?.total || 0) > 0}
-            onCreateAgent={handleCreateNewAgent}
-            onClearFilters={clearFilters}
-          />
-        ) : (
-          <AgentsGrid
-            agents={agents}
-            onEditAgent={handleEditAgent}
-            onDeleteAgent={handleDeleteAgent}
-            onToggleDefault={handleToggleDefault}
-            deleteAgentMutation={deleteAgentMutation}
-          />
-        )}
-
-        {pagination && pagination.pages > 1 && (
-          <Pagination
-            currentPage={pagination.page}
-            totalPages={pagination.pages}
-            onPageChange={setPage}
-            isLoading={isLoading}
-          />
-        )}
-
-        <UpdateAgentDialog
-          agentId={editingAgentId}
-          isOpen={editDialogOpen}
-          onOpenChange={(open) => {
-            setEditDialogOpen(open);
-            if (!open) setEditingAgentId(null);
-          }}
-          onAgentUpdated={loadAgents}
+        <StreamlinedInstallDialog
+          item={selectedItem}
+          open={showInstallDialog}
+          onOpenChange={setShowInstallDialog}
+          onInstall={handleInstall}
+          isInstalling={installingItemId === selectedItem?.id}
         />
+
+        <NewAgentDialog 
+          open={showNewAgentDialog} 
+          onOpenChange={setShowNewAgentDialog}
+        />
+
+        <MarketplaceAgentPreviewDialog
+          agent={selectedItem}
+          isOpen={showPreviewDialog}
+          onClose={handlePreviewClose}
+          onInstall={handlePreviewInstall}
+          isInstalling={installingItemId === selectedItem?.id}
+        />
+        {agentLimitError && (
+          <AgentCountLimitDialog
+            open={showAgentLimitDialog}
+            onOpenChange={setShowAgentLimitDialog}
+            currentCount={agentLimitError.detail.current_count}
+            limit={agentLimitError.detail.limit}
+            tierName={agentLimitError.detail.tier_name}
+          />
+        )}
       </div>
     </div>
   );

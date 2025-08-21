@@ -1,9 +1,15 @@
-from agentpress.tool import ToolResult, openapi_schema, xml_schema
-from sandbox.tool_base import SandboxToolsBase    
+from agentpress.tool import ToolResult, openapi_schema, usage_example
+from sandbox.tool_base import SandboxToolsBase
 from utils.files_utils import should_exclude_file, clean_path
 from agentpress.thread_manager import ThreadManager
 from utils.logger import logger
+from utils.config import config
 import os
+import json
+import litellm
+import openai
+import asyncio
+from typing import Optional
 
 class SandboxFilesTool(SandboxToolsBase):
     """Tool for executing file system operations in a Daytona sandbox. All operations are performed relative to the /workspace directory."""
@@ -21,10 +27,10 @@ class SandboxFilesTool(SandboxToolsBase):
         """Check if a file should be excluded based on path, name, or extension"""
         return should_exclude_file(rel_path)
 
-    def _file_exists(self, path: str) -> bool:
+    async def _file_exists(self, path: str) -> bool:
         """Check if a file exists in the sandbox"""
         try:
-            self.sandbox.fs.get_file_info(path)
+            await self.sandbox.fs.get_file_info(path)
             return True
         except Exception:
             return False
@@ -36,7 +42,7 @@ class SandboxFilesTool(SandboxToolsBase):
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
-            files = self.sandbox.fs.list_files(self.workspace_path)
+            files = await self.sandbox.fs.list_files(self.workspace_path)
             for file_info in files:
                 rel_path = file_info.name
                 
@@ -46,7 +52,7 @@ class SandboxFilesTool(SandboxToolsBase):
 
                 try:
                     full_path = f"{self.workspace_path}/{rel_path}"
-                    content = self.sandbox.fs.download_file(full_path).decode()
+                    content = (await self.sandbox.fs.download_file(full_path)).decode()
                     files_state[rel_path] = {
                         "content": content,
                         "is_dir": file_info.is_dir,
@@ -97,13 +103,7 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="create-file",
-        mappings=[
-            {"param_name": "file_path", "node_type": "attribute", "path": "."},
-            {"param_name": "file_contents", "node_type": "content", "path": "."}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="create_file">
         <parameter name="file_path">src/main.py</parameter>
@@ -117,8 +117,7 @@ class SandboxFilesTool(SandboxToolsBase):
         </parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def create_file(self, file_path: str, file_contents: str, permissions: str = "644") -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -126,24 +125,28 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if self._file_exists(full_path):
+            if await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' already exists. Use update_file to modify existing files.")
             
             # Create parent directories if needed
             parent_dir = '/'.join(full_path.split('/')[:-1])
             if parent_dir:
-                self.sandbox.fs.create_folder(parent_dir, "755")
+                await self.sandbox.fs.create_folder(parent_dir, "755")
+            
+            # convert to json string if file_contents is a dict
+            if isinstance(file_contents, dict):
+                file_contents = json.dumps(file_contents, indent=4)
             
             # Write the file content
-            self.sandbox.fs.upload_file(file_contents.encode(), full_path)
-            self.sandbox.fs.set_file_permissions(full_path, permissions)
+            await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
+            await self.sandbox.fs.set_file_permissions(full_path, permissions)
             
             message = f"File '{file_path}' created successfully."
             
             # Check if index.html was created and add 8080 server info (only in root workspace)
             if file_path.lower() == 'index.html':
                 try:
-                    website_link = self.sandbox.get_preview_link(8080)
+                    website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
                     message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
                     message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
@@ -158,7 +161,7 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "str_replace",
-            "description": "Replace specific text in a file. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Use this when you need to replace a unique string that appears exactly once in the file.",
+            "description": "Replace specific text in a file. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). IMPORTANT: Prefer using edit_file for faster, shorter edits to avoid repetition. Only use this tool when you need to replace a unique string that appears exactly once in the file and edit_file is not suitable.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -179,14 +182,7 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="str-replace",
-        mappings=[
-            {"param_name": "file_path", "node_type": "attribute", "path": "."},
-            {"param_name": "old_str", "node_type": "element", "path": "old_str"},
-            {"param_name": "new_str", "node_type": "element", "path": "new_str"}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="str_replace">
         <parameter name="file_path">src/main.py</parameter>
@@ -194,8 +190,7 @@ class SandboxFilesTool(SandboxToolsBase):
         <parameter name="new_str">replacement text that will be inserted instead</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def str_replace(self, file_path: str, old_str: str, new_str: str) -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -203,10 +198,10 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if not self._file_exists(full_path):
+            if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
-            content = self.sandbox.fs.download_file(full_path).decode()
+            content = (await self.sandbox.fs.download_file(full_path)).decode()
             old_str = old_str.expandtabs()
             new_str = new_str.expandtabs()
             
@@ -219,7 +214,7 @@ class SandboxFilesTool(SandboxToolsBase):
             
             # Perform replacement
             new_content = content.replace(old_str, new_str)
-            self.sandbox.fs.upload_file(new_content.encode(), full_path)
+            await self.sandbox.fs.upload_file(new_content.encode(), full_path)
             
             # Show snippet around the edit
             replacement_line = content.split(old_str)[0].count('\n')
@@ -242,7 +237,7 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "full_file_rewrite",
-            "description": "Completely rewrite an existing file with new content. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Use this when you need to replace the entire file content or make extensive changes throughout the file.",
+            "description": "Completely rewrite an existing file with new content. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). IMPORTANT: Always prefer using edit_file for making changes to code. Only use this tool when edit_file fails or when you need to replace the entire file content.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -264,13 +259,7 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="full-file-rewrite",
-        mappings=[
-            {"param_name": "file_path", "node_type": "attribute", "path": "."},
-            {"param_name": "file_contents", "node_type": "content", "path": "."}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="full_file_rewrite">
         <parameter name="file_path">src/main.py</parameter>
@@ -282,8 +271,7 @@ class SandboxFilesTool(SandboxToolsBase):
         </parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def full_file_rewrite(self, file_path: str, file_contents: str, permissions: str = "644") -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -291,18 +279,18 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if not self._file_exists(full_path):
+            if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist. Use create_file to create a new file.")
             
-            self.sandbox.fs.upload_file(file_contents.encode(), full_path)
-            self.sandbox.fs.set_file_permissions(full_path, permissions)
+            await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
+            await self.sandbox.fs.set_file_permissions(full_path, permissions)
             
             message = f"File '{file_path}' completely rewritten successfully."
             
             # Check if index.html was rewritten and add 8080 server info (only in root workspace)
             if file_path.lower() == 'index.html':
                 try:
-                    website_link = self.sandbox.get_preview_link(8080)
+                    website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
                     message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
                     message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
@@ -330,19 +318,13 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="delete-file",
-        mappings=[
-            {"param_name": "file_path", "node_type": "attribute", "path": "."}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="delete_file">
         <parameter name="file_path">src/main.py</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def delete_file(self, file_path: str) -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -350,13 +332,224 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if not self._file_exists(full_path):
+            if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
-            self.sandbox.fs.delete_file(full_path)
+            await self.sandbox.fs.delete_file(full_path)
             return self.success_response(f"File '{file_path}' deleted successfully.")
         except Exception as e:
             return self.fail_response(f"Error deleting file: {str(e)}")
+
+    async def _call_morph_api(self, file_content: str, code_edit: str, instructions: str, file_path: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Call Morph API to apply edits to file content.
+        Returns a tuple (new_content, error_message).
+        On success, error_message is None.
+        On failure, new_content is None.
+        """
+        try:
+            morph_api_key = getattr(config, 'MORPH_API_KEY', None) or os.getenv('MORPH_API_KEY')
+            openrouter_key = getattr(config, 'OPENROUTER_API_KEY', None) or os.getenv('OPENROUTER_API_KEY')
+            
+            messages = [{
+                "role": "user", 
+                "content": f"<instruction>{instructions}</instruction>\n<code>{file_content}</code>\n<update>{code_edit}</update>"
+            }]
+
+            response = None
+            if morph_api_key:
+                logger.debug("Using direct Morph API for file editing.")
+                client = openai.AsyncOpenAI(
+                    api_key=morph_api_key,
+                    base_url="https://api.morphllm.com/v1"
+                )
+                response = await client.chat.completions.create(
+                    model="morph-v3-large",
+                    messages=messages,
+                    temperature=0.0,
+                    timeout=30.0
+                )
+            elif openrouter_key:
+                logger.debug("Morph API key not set, falling back to OpenRouter for file editing via litellm.")
+                response = await litellm.acompletion(
+                    model="openrouter/morph/morph-v3-large",
+                    messages=messages,
+                    api_key=openrouter_key,
+                    api_base="https://openrouter.ai/api/v1",
+                    temperature=0.0,
+                    timeout=30.0
+                )
+            else:
+                error_msg = "No Morph or OpenRouter API key found, cannot perform AI edit."
+                logger.warning(error_msg)
+                return None, error_msg
+            
+            if response and response.choices and len(response.choices) > 0:
+                content = response.choices[0].message.content.strip()
+
+                # Extract code block if wrapped in markdown
+                if content.startswith("```") and content.endswith("```"):
+                    lines = content.split('\n')
+                    if len(lines) > 2:
+                        content = '\n'.join(lines[1:-1])
+                
+                return content, None
+            else:
+                error_msg = f"Invalid response from Morph/OpenRouter API: {response}"
+                logger.error(error_msg)
+                return None, error_msg
+                
+        except Exception as e:
+            error_message = f"AI model call for file edit failed. Exception: {str(e)}"
+            # Try to get more details from the exception if it's an API error
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                error_message += f"\n\nAPI Response Body:\n{e.response.text}"
+            elif hasattr(e, 'body'): # litellm sometimes puts it in body
+                error_message += f"\n\nAPI Response Body:\n{e.body}"
+            logger.error(f"Error calling Morph/OpenRouter API: {error_message}", exc_info=True)
+            return None, error_message
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nALWAYS make all edits to a file in a single edit_file instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_file": {
+                        "type": "string",
+                        "description": "The target file to modify"
+                    },
+                    "instructions": {
+                        "type": "string", 
+                        "description": "A single sentence written in the first person describing what you're changing. Used to help disambiguate uncertainty in the edit."
+                    },
+                    "code_edit": {
+                        "type": "string",
+                        "description": "Specify ONLY the precise lines of code that you wish to edit. Use // ... existing code ... for unchanged sections."
+                    }
+                },
+                "required": ["target_file", "instructions", "code_edit"]
+            }
+        }
+    })
+    @usage_example('''
+        <!-- Example: Mark multiple scattered tasks as complete in a todo list -->
+        <function_calls>
+        <invoke name="edit_file">
+        <parameter name="target_file">todo.md</parameter>
+        <parameter name="instructions">I am marking the research and setup tasks as complete in my todo list.</parameter>
+        <parameter name="code_edit">
+// ... existing code ...
+- [x] Research topic A
+- [ ] Research topic B
+- [x] Research topic C
+// ... existing code ...
+- [x] Setup database
+- [x] Configure server
+// ... existing code ...
+        </parameter>
+        </invoke>
+        </function_calls>
+
+        <!-- Example: Add error handling and logging to a function -->
+        <function_calls>
+        <invoke name="edit_file">
+        <parameter name="target_file">src/main.py</parameter>
+        <parameter name="instructions">I am adding error handling and logging to the user authentication function</parameter>
+        <parameter name="code_edit">
+// ... existing imports ...
+from my_app.logging import logger
+from my_app.exceptions import DatabaseError
+// ... existing code ...
+def authenticate_user(username, password):
+    try:
+        user = get_user(username)
+        if user and verify_password(password, user.password_hash):
+            return user
+        return None
+    except DatabaseError as e:
+        logger.error(f"Database error during authentication: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error during authentication: {e}")
+        return None
+// ... existing code ...
+        </parameter>
+        </invoke>
+        </function_calls>
+        ''')
+    async def edit_file(self, target_file: str, instructions: str, code_edit: str) -> ToolResult:
+        """Edit a file using AI-powered intelligent editing with fallback to string replacement"""
+        try:
+            # Ensure sandbox is initialized
+            await self._ensure_sandbox()
+            
+            target_file = self.clean_path(target_file)
+            full_path = f"{self.workspace_path}/{target_file}"
+            if not await self._file_exists(full_path):
+                return self.fail_response(f"File '{target_file}' does not exist")
+            
+            # Read current content
+            original_content = (await self.sandbox.fs.download_file(full_path)).decode()
+            
+            # Try Morph AI editing first
+            logger.debug(f"Attempting AI-powered edit for file '{target_file}' with instructions: {instructions[:100]}...")
+            new_content, error_message = await self._call_morph_api(original_content, code_edit, instructions, target_file)
+
+            if error_message:
+                return ToolResult(success=False, output=json.dumps({
+                    "message": f"AI editing failed: {error_message}",
+                    "file_path": target_file,
+                    "original_content": original_content,
+                    "updated_content": None
+                }))
+
+            if new_content is None:
+                return ToolResult(success=False, output=json.dumps({
+                    "message": "AI editing failed for an unknown reason. The model returned no content.",
+                    "file_path": target_file,
+                    "original_content": original_content,
+                    "updated_content": None
+                }))
+
+            if new_content == original_content:
+                return ToolResult(success=True, output=json.dumps({
+                    "message": f"AI editing resulted in no changes to the file '{target_file}'.",
+                    "file_path": target_file,
+                    "original_content": original_content,
+                    "updated_content": original_content
+                }))
+
+            # AI editing successful
+            await self.sandbox.fs.upload_file(new_content.encode(), full_path)
+            
+            # Return rich data for frontend diff view
+            return ToolResult(success=True, output=json.dumps({
+                "message": f"File '{target_file}' edited successfully.",
+                "file_path": target_file,
+                "original_content": original_content,
+                "updated_content": new_content
+            }))
+                    
+        except Exception as e:
+            logger.error(f"Unhandled error in edit_file: {str(e)}", exc_info=True)
+            # Try to get original_content if possible
+            original_content_on_error = None
+            try:
+                full_path_on_error = f"{self.workspace_path}/{self.clean_path(target_file)}"
+                if await self._file_exists(full_path_on_error):
+                    original_content_on_error = (await self.sandbox.fs.download_file(full_path_on_error)).decode()
+            except:
+                pass
+            
+            return ToolResult(success=False, output=json.dumps({
+                "message": f"Error editing file: {str(e)}",
+                "file_path": target_file,
+                "original_content": original_content_on_error,
+                "updated_content": None
+            }))
 
     # @openapi_schema({
     #     "type": "function",
@@ -427,11 +620,11 @@ class SandboxFilesTool(SandboxToolsBase):
     #         file_path = self.clean_path(file_path)
     #         full_path = f"{self.workspace_path}/{file_path}"
             
-    #         if not self._file_exists(full_path):
+    #         if not await self._file_exists(full_path):
     #             return self.fail_response(f"File '{file_path}' does not exist")
             
     #         # Download and decode file content
-    #         content = self.sandbox.fs.download_file(full_path).decode()
+    #         content = await self.sandbox.fs.download_file(full_path).decode()
             
     #         # Split content into lines
     #         lines = content.split('\n')
@@ -459,4 +652,3 @@ class SandboxFilesTool(SandboxToolsBase):
     #         return self.fail_response(f"File '{file_path}' appears to be binary and cannot be read as text")
     #     except Exception as e:
     #         return self.fail_response(f"Error reading file: {str(e)}")
-

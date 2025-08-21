@@ -58,7 +58,7 @@ export function AskToolView({
 
   const isPreviewableFile = (filePath: string): boolean => {
     const ext = filePath.split('.').pop()?.toLowerCase() || '';
-    return ext === 'html' || ext === 'htm' || ext === 'md' || ext === 'markdown' || ext === 'csv' || ext === 'tsv';
+    return ext === 'html' || ext === 'htm' || ext === 'md' || ext === 'markdown' || ext === 'csv' || ext === 'tsv' || ext === 'pdf';
   };
 
   const toolTitle = getToolTitle(name) || 'Ask User';
@@ -70,11 +70,11 @@ export function AskToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
               <MessageCircleQuestion className="w-5 h-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
@@ -163,15 +163,15 @@ export function AskToolView({
                             sandboxId={project?.sandbox?.id}
                             showPreview={true}
                             className={cn(
-                              "w-full",
-                              isImage ? "h-auto min-h-[54px]" :
-                                isPreviewable ? "min-h-[240px] max-h-[400px] overflow-auto" : "h-[54px]"
+                              isImage ? "aspect-square w-full" : "w-full",
+                              isImage ? "" :
+                                isPreviewable ? "min-h-full max-h-[400px] overflow-auto" : "h-[54px]"
                             )}
                             customStyle={
                               isImage ? {
                                 width: '100%',
-                                height: 'auto',
-                                '--attachment-height': shouldSpanFull ? '240px' : '180px'
+                                height: '100%',
+                                '--attachment-height': '100%'
                               } as React.CSSProperties :
                                 isPreviewable ? {
                                   gridColumn: '1 / -1'

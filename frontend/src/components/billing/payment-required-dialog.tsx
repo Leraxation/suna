@@ -10,7 +10,7 @@ import { Zap } from 'lucide-react';
 import { useModal } from '@/hooks/use-modal-store';
 import { PricingSection } from '../home/sections/pricing-section';
 
-const returnUrl = process.env.NEXT_PUBLIC_URL as string;
+const returnUrl = process.env.NEXT_PUBLIC_APP_URL as string;
 
 export const PaymentRequiredDialog = () => {
     const { isOpen, type, onClose } = useModal();

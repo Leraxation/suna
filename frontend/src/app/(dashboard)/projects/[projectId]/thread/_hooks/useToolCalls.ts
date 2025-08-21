@@ -5,6 +5,7 @@ import { UnifiedMessage, ParsedMetadata, StreamingToolCall, AgentStatus } from '
 import { safeJsonParse } from '@/components/thread/utils';
 import { ParsedContent } from '@/components/thread/types';
 import { extractToolName } from '@/components/thread/tool-views/xml-parser';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface UseToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -76,6 +77,7 @@ export function useToolCalls(
   const [externalNavIndex, setExternalNavIndex] = useState<number | undefined>(undefined);
   const userClosedPanelRef = useRef(false);
   const userNavigatedRef = useRef(false); // Track if user manually navigated
+  const isMobile = useIsMobile();
 
   const toggleSidePanel = useCallback(() => {
     setIsSidePanelOpen((prevIsOpen) => {
@@ -213,13 +215,13 @@ export function useToolCalls(
         setCurrentToolIndex(historicalToolPairs.length - 1);
       } else if (isSidePanelOpen && !userClosedPanelRef.current && !userNavigatedRef.current) {
         setCurrentToolIndex(historicalToolPairs.length - 1);
-      } else if (!isSidePanelOpen && !autoOpenedPanel && !userClosedPanelRef.current) {
+      } else if (!isSidePanelOpen && !autoOpenedPanel && !userClosedPanelRef.current && !isMobile) {
         setCurrentToolIndex(historicalToolPairs.length - 1);
         setIsSidePanelOpen(true);
         setAutoOpenedPanel(true);
       }
     }
-  }, [messages, isSidePanelOpen, autoOpenedPanel, agentStatus]);
+  }, [messages, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile]);
 
   // Reset user navigation flag when agent stops
   useEffect(() => {
@@ -244,20 +246,10 @@ export function useToolCalls(
     userClosedPanelRef.current = false;
     userNavigatedRef.current = true; // Mark that user manually navigated
 
-    console.log(
-      '[PAGE] Tool Click Triggered. Assistant Message ID:',
-      clickedAssistantMessageId,
-      'Tool Name:',
-      clickedToolName,
-    );
-
     // Use the pre-computed mapping for faster lookup
     const toolIndex = assistantMessageToToolIndex.current.get(clickedAssistantMessageId);
 
     if (toolIndex !== undefined) {
-      console.log(
-        `[PAGE] Found tool call at index ${toolIndex} for assistant message ${clickedAssistantMessageId}`,
-      );
       setExternalNavIndex(toolIndex);
       setCurrentToolIndex(toolIndex);
       setIsSidePanelOpen(true);
@@ -280,7 +272,6 @@ export function useToolCalls(
         
         // Check if we have a tool call at this index
         if (messageIndex !== -1 && messageIndex < toolCalls.length) {
-          console.log(`[PAGE] Using fallback: found tool at index ${messageIndex}`);
           setExternalNavIndex(messageIndex);
           setCurrentToolIndex(messageIndex);
           setIsSidePanelOpen(true);
@@ -301,8 +292,6 @@ export function useToolCalls(
       const rawToolName = toolCall.name || toolCall.xml_tag_name || 'Unknown Tool';
       const toolName = rawToolName.replace(/_/g, '-').toLowerCase();
 
-      console.log('[STREAM] Received tool call:', toolName, '(raw:', rawToolName, ')');
-
       if (userClosedPanelRef.current) return;
 
       const toolArguments = toolCall.arguments || '';
@@ -316,15 +305,20 @@ export function useToolCalls(
         toolName.includes('file') ||
         toolName === 'create-file' ||
         toolName === 'delete-file' ||
-        toolName === 'full-file-rewrite'
+        toolName === 'full-file-rewrite' ||
+        toolName === 'edit-file'
       ) {
-        const fileOpTags = ['create-file', 'delete-file', 'full-file-rewrite'];
+        const fileOpTags = ['create-file', 'delete-file', 'full-file-rewrite', 'edit-file'];
         const matchingTag = fileOpTags.find((tag) => toolName === tag);
         if (matchingTag) {
-          if (!toolArguments.includes(`<${matchingTag}>`) && !toolArguments.includes('file_path=')) {
+          if (!toolArguments.includes(`<${matchingTag}>`) && !toolArguments.includes('file_path=') && !toolArguments.includes('target_file=')) {
             const filePath = toolArguments.trim();
             if (filePath && !filePath.startsWith('<')) {
+              if (matchingTag === 'edit-file') {
+                formattedContent = `<${matchingTag} target_file="${filePath}">`;
+              } else {
               formattedContent = `<${matchingTag} file_path="${filePath}">`;
+              }
             } else {
               formattedContent = `<${matchingTag}>${toolArguments}</${matchingTag}>`;
             }

@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
+from daytona_sdk import AsyncSandbox
 
 from sandbox.sandbox import get_or_start_sandbox, delete_sandbox
 from utils.logger import logger
@@ -19,7 +20,7 @@ def initialize(_db: DBConnection):
     """Initialize the sandbox API with resources from the main API."""
     global db
     db = _db
-    logger.info("Initialized sandbox API with database connection")
+    logger.debug("Initialized sandbox API with database connection")
 
 class FileInfo(BaseModel):
     """Model for file information"""
@@ -105,7 +106,7 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: Optional[str] 
     
     raise HTTPException(status_code=403, detail="Not authorized to access this sandbox")
 
-async def get_sandbox_by_id_safely(client, sandbox_id: str):
+async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
     Safely retrieve a sandbox object by its ID, using the project that owns it.
     
@@ -114,7 +115,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str):
         sandbox_id: The sandbox ID to retrieve
     
     Returns:
-        Sandbox: The sandbox object
+        AsyncSandbox: The sandbox object
         
     Raises:
         HTTPException: If the sandbox doesn't exist or can't be retrieved
@@ -152,7 +153,7 @@ async def create_file(
     # Normalize the path to handle UTF-8 encoding correctly
     path = normalize_path(path)
     
-    logger.info(f"Received file upload request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    logger.debug(f"Received file upload request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
     # Verify the user has access to this sandbox
@@ -166,8 +167,8 @@ async def create_file(
         content = await file.read()
         
         # Create file using raw binary content
-        sandbox.fs.upload_file(content, path)
-        logger.info(f"File created at {path} in sandbox {sandbox_id}")
+        await sandbox.fs.upload_file(content, path)
+        logger.debug(f"File created at {path} in sandbox {sandbox_id}")
         
         return {"status": "success", "created": True, "path": path}
     except Exception as e:
@@ -185,7 +186,7 @@ async def list_files(
     # Normalize the path to handle UTF-8 encoding correctly
     path = normalize_path(path)
     
-    logger.info(f"Received list files request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    logger.debug(f"Received list files request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
     # Verify the user has access to this sandbox
@@ -196,7 +197,7 @@ async def list_files(
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
         # List files
-        files = sandbox.fs.list_files(path)
+        files = await sandbox.fs.list_files(path)
         result = []
         
         for file in files:
@@ -213,7 +214,7 @@ async def list_files(
             )
             result.append(file_info)
         
-        logger.info(f"Successfully listed {len(result)} files in sandbox {sandbox_id}")
+        logger.debug(f"Successfully listed {len(result)} files in sandbox {sandbox_id}")
         return {"files": [file.dict() for file in result]}
     except Exception as e:
         logger.error(f"Error listing files in sandbox {sandbox_id}: {str(e)}")
@@ -231,9 +232,9 @@ async def read_file(
     original_path = path
     path = normalize_path(path)
     
-    logger.info(f"Received file read request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    logger.debug(f"Received file read request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     if original_path != path:
-        logger.info(f"Normalized path from '{original_path}' to '{path}'")
+        logger.debug(f"Normalized path from '{original_path}' to '{path}'")
     
     client = await db.client
     
@@ -246,7 +247,7 @@ async def read_file(
         
         # Read file directly - don't check existence first with a separate call
         try:
-            content = sandbox.fs.download_file(path)
+            content = await sandbox.fs.download_file(path)
         except Exception as download_err:
             logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
             raise HTTPException(
@@ -256,7 +257,7 @@ async def read_file(
         
         # Return a Response object with the content directly
         filename = os.path.basename(path)
-        logger.info(f"Successfully read file {filename} from sandbox {sandbox_id}")
+        logger.debug(f"Successfully read file {filename} from sandbox {sandbox_id}")
         
         # Ensure proper encoding by explicitly using UTF-8 for the filename in Content-Disposition header
         # This applies RFC 5987 encoding for the filename to support non-ASCII characters
@@ -286,7 +287,7 @@ async def delete_file(
     # Normalize the path to handle UTF-8 encoding correctly
     path = normalize_path(path)
     
-    logger.info(f"Received file delete request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    logger.debug(f"Received file delete request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
     # Verify the user has access to this sandbox
@@ -297,8 +298,8 @@ async def delete_file(
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
         # Delete file
-        sandbox.fs.delete_file(path)
-        logger.info(f"File deleted at {path} in sandbox {sandbox_id}")
+        await sandbox.fs.delete_file(path)
+        logger.debug(f"File deleted at {path} in sandbox {sandbox_id}")
         
         return {"status": "success", "deleted": True, "path": path}
     except Exception as e:
@@ -312,7 +313,7 @@ async def delete_sandbox_route(
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
     """Delete an entire sandbox"""
-    logger.info(f"Received sandbox delete request for sandbox {sandbox_id}, user_id: {user_id}")
+    logger.debug(f"Received sandbox delete request for sandbox {sandbox_id}, user_id: {user_id}")
     client = await db.client
     
     # Verify the user has access to this sandbox
@@ -338,7 +339,7 @@ async def ensure_project_sandbox_active(
     Ensure that a project's sandbox is active and running.
     Checks the sandbox status and starts it if it's not running.
     """
-    logger.info(f"Received ensure sandbox active request for project {project_id}, user_id: {user_id}")
+    logger.debug(f"Received ensure sandbox active request for project {project_id}, user_id: {user_id}")
     client = await db.client
     
     # Find the project and sandbox information
@@ -375,10 +376,10 @@ async def ensure_project_sandbox_active(
         sandbox_id = sandbox_info['id']
         
         # Get or start the sandbox
-        logger.info(f"Ensuring sandbox is active for project {project_id}")
+        logger.debug(f"Ensuring sandbox is active for project {project_id}")
         sandbox = await get_or_start_sandbox(sandbox_id)
         
-        logger.info(f"Successfully ensured sandbox {sandbox_id} is active for project {project_id}")
+        logger.debug(f"Successfully ensured sandbox {sandbox_id} is active for project {project_id}")
         
         return {
             "status": "success", 

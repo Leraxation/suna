@@ -1,0 +1,119 @@
+# Backend files
+backend/
+
+# Docker files
+docker-compose.yaml
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Node modules
+node_modules/
+
+# Logs
+logs/
+worker-logs/
+*.log
+
+# Environment files (except production)
+.env.local
+.env.development
+.env.test
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+README.md
+CONTRIBUTING.md
+LICENSE
+
+# Development files
+.trae/
+test*/
+tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Build artifacts
+.next/
+dist/
+build/
+
+# Cache
+.cache/
+.npm/
+.yarn/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Batch and script files
+*.bat
+*.ps1
+*.sh
+
+# Backup files
+*.backup
+*.bak
+
+# Large media files
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+
+# Archive files
+*.zip
+*.tar
+*.gz
+*.rar
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration files that shouldn't be deployed
+mise.toml
+launch.json
+setup.py
+start.py
+test_setup.py
+list_files.sh
+uv.lock
+pyproject.toml
+
+# Supabase local files
+supabase/
+
+# Specific project files
+Suna AI Project Handover Report.txt
+ADVANCED_AI_CAPABILITIES.md
+AI_ENHANCEMENTS_OVERVIEW.md
+SUNA_AI_INSTALLATION_GUIDE.md
+GOOGLE_OAUTH_SETUP.md
+.env.txt.backup

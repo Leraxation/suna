@@ -20,6 +20,10 @@ import {
   BookOpen,
   MessageCircleQuestion,
   CheckCircle2,
+  Table2,
+  ListTodo,
+  List,
+  Computer,
 } from 'lucide-react';
 
 // Flag to control whether tool result messages are rendered
@@ -79,22 +83,10 @@ export function safeJsonParse<T>(
 // Helper function to get an icon based on tool name
 export const getToolIcon = (toolName: string): ElementType => {
   switch (toolName?.toLowerCase()) {
-    case 'web-browser-takeover':
     case 'browser-navigate-to':
-    case 'browser-click-element':
-    case 'browser-input-text':
-    case 'browser-scroll-down':
-    case 'browser-scroll-up':
-    case 'browser-click-coordinates':
-    case 'browser-send-keys':
-    case 'browser-switch-tab':
-    case 'browser-go-back':
-    case 'browser-close-tab':
-    case 'browser-drag-drop':
-    case 'browser-get-dropdown-options':
-    case 'browser-select-dropdown-option':
-    case 'browser-scroll-to-text':
-    case 'browser-wait':
+    case 'browser-act':
+    case 'browser-extract-content':
+    case 'browser-screenshot':
       return Globe;
 
     // File operations
@@ -106,6 +98,14 @@ export const getToolIcon = (toolName: string): ElementType => {
       return FilePlus;
     case 'read-file':
       return FileText;
+    case 'edit-file':
+      return FileEdit;
+
+    // Task operations
+    case 'create-tasks':
+      return List;
+    case 'update-tasks':
+      return ListTodo;
 
     // Shell commands
     case 'execute-command':
@@ -114,6 +114,10 @@ export const getToolIcon = (toolName: string): ElementType => {
       return Terminal;
     case 'terminate-command':
       return Terminal;
+
+    // Port operations
+    case 'expose-port':
+      return Computer;
 
     // Web operations
     case 'web-search':
@@ -130,6 +134,15 @@ export const getToolIcon = (toolName: string): ElementType => {
       return Network;
     case 'execute-data-provider-call':
       return Network;
+
+    // Sheets tools
+    case 'create-sheet':
+    case 'update-sheet':
+    case 'view-sheet':
+    case 'analyze-sheet':
+    case 'visualize-sheet':
+    case 'format-sheet':
+      return Table2;
 
     // Code operations
     case 'delete-file':
@@ -151,11 +164,6 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'complete':
       return CheckCircle2;
 
-    // MCP tools
-    case 'call-mcp-tool':
-      return PlugIcon;
-
-    // Default case
     default:
       if (toolName?.startsWith('mcp_')) {
         const parts = toolName.split('_');
@@ -176,9 +184,6 @@ export const getToolIcon = (toolName: string): ElementType => {
       }
       
       // Add logging for debugging unhandled tool types
-      console.log(
-        `[PAGE] Using default icon for unknown tool type: ${toolName}`,
-      );
       return Wrench; // Default icon for tools
   }
 };
@@ -192,7 +197,7 @@ export const extractPrimaryParam = (
 
   try {
     // Handle browser tools with a prefix check
-    if (toolName?.toLowerCase().startsWith('browser-')) {
+    if (toolName?.toLowerCase().startsWith('browser_')) {
       // Try to extract URL for navigation
       const urlMatch = content.match(/url=(?:"|')([^"|']+)(?:"|')/);
       if (urlMatch) return urlMatch[1];
@@ -242,6 +247,11 @@ export const extractPrimaryParam = (
         match = content.match(/file_path=(?:"|')([^"|']+)(?:"|')/);
         // Return just the filename part
         return match ? match[1].split('/').pop() || match[1] : null;
+      case 'edit-file':
+        // Try to match target_file attribute for edit-file
+        match = content.match(/target_file=(?:"|')([^"|']+)(?:"|')/) || content.match(/<parameter\s+name=["']target_file["']>([^<]+)/i);
+        // Return just the filename part
+        return match ? (match[1].split('/').pop() || match[1]).trim() : null;
 
       // Shell commands
       case 'execute-command':
@@ -296,37 +306,41 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['full-file-rewrite', 'Rewriting File'],
   ['str-replace', 'Editing Text'],
   ['str_replace', 'Editing Text'],
+  ['edit_file', 'Editing File'],
+  ['edit-file', 'Editing File'],
+
+  ['create-tasks', 'Creating Tasks'],
+  ['update-tasks', 'Updating Tasks'],
   
-  ['browser-click-element', 'Clicking Element'],
-  ['browser-close-tab', 'Closing Tab'],
-  ['browser-drag-drop', 'Dragging Element'],
-  ['browser-get-dropdown-options', 'Getting Options'],
-  ['browser-go-back', 'Going Back'],
-  ['browser-input-text', 'Entering Text'],
-  ['browser-navigate-to', 'Navigating to Page'],
-  ['browser-scroll-down', 'Scrolling Down'],
-  ['browser-scroll-to-text', 'Scrolling to Text'],
-  ['browser-scroll-up', 'Scrolling Up'],
-  ['browser-select-dropdown-option', 'Selecting Option'],
-  ['browser-click-coordinates', 'Clicking Coordinates'],
-  ['browser-send-keys', 'Pressing Keys'],
-  ['browser-switch-tab', 'Switching Tab'],
-  ['browser-wait', 'Waiting'],
+  ['browser_navigate_to', 'Navigating to Page'],
+  ['browser_act', 'Performing Action'],
+  ['browser_extract_content', 'Extracting Content'],
+  ['browser_screenshot', 'Taking Screenshot'],
 
   ['execute-data-provider-call', 'Calling data provider'],
-  ['execute_data_provider_call', 'Calling data provider'],
+  ['execute_data-provider_call', 'Calling data provider'],
   ['get-data-provider-endpoints', 'Getting endpoints'],
   
   ['deploy', 'Deploying'],
   ['ask', 'Ask'],
+  ['create-tasks', 'Creating Tasks'],
+  ['update-tasks', 'Updating Tasks'],
   ['complete', 'Completing Task'],
   ['crawl-webpage', 'Crawling Website'],
   ['expose-port', 'Exposing Port'],
   ['scrape-webpage', 'Scraping Website'],
   ['web-search', 'Searching Web'],
   ['see-image', 'Viewing Image'],
+  ['create-presentation-outline', 'Creating Presentation Outline'],
+  ['create-presentation', 'Creating Presentation'],
+
+  ['create-sheet', 'Creating Sheet'],
+  ['update-sheet', 'Updating Sheet'],
+  ['view-sheet', 'Viewing Sheet'],
+  ['analyze-sheet', 'Analyzing Sheet'],
+  ['visualize-sheet', 'Visualizing Sheet'],
+  ['format-sheet', 'Formatting Sheet'],
   
-  ['call-mcp-tool', 'External Tool'],
 
   ['update-agent', 'Updating Agent'],
   ['get-current-agent-config', 'Getting Agent Config'],
@@ -336,6 +350,8 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['get-popular-mcp-servers', 'Getting Popular MCP Servers'],
   ['test-mcp-server-connection', 'Testing MCP Server Connection'],
 
+  ['get-project-structure', 'Getting Project Structure'],
+  ['build-project', 'Building Project'],
 
   //V2
 
@@ -348,22 +364,12 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['delete_file', 'Deleting File'],
   ['full_file_rewrite', 'Rewriting File'],
   ['str_replace', 'Editing Text'],
+  ['edit_file', 'Editing File'],
   
-  ['browser_click_element', 'Clicking Element'],
-  ['browser_close_tab', 'Closing Tab'],
-  ['browser_drag_drop', 'Dragging Element'],
-  ['browser_get_dropdown_options', 'Getting Options'],
-  ['browser_go_back', 'Going Back'],
-  ['browser_input_text', 'Entering Text'],
   ['browser_navigate_to', 'Navigating to Page'],
-  ['browser_scroll_down', 'Scrolling Down'],
-  ['browser_scroll_to_text', 'Scrolling to Text'],
-  ['browser_scroll_up', 'Scrolling Up'],
-  ['browser_select_dropdown_option', 'Selecting Option'],
-  ['browser_click_coordinates', 'Clicking Coordinates'],
-  ['browser_send_keys', 'Pressing Keys'],
-  ['browser_switch_tab', 'Switching Tab'],
-  ['browser_wait', 'Waiting'],
+  ['browser_act', 'Performing Action'],
+  ['browser_extract_content', 'Extracting Content'],
+  ['browser_screenshot', 'Taking Screenshot'],
 
   ['execute_data_provider_call', 'Calling data provider'],
   ['get_data_provider_endpoints', 'Getting endpoints'],
@@ -377,8 +383,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['web_search', 'Searching Web'],
   ['see_image', 'Viewing Image'],
   
-  ['call_mcp_tool', 'External Tool'],
-
   ['update_agent', 'Updating Agent'],
   ['get_current_agent_config', 'Getting Agent Config'],
   ['search_mcp_servers', 'Searching MCP Servers'],
@@ -464,3 +468,38 @@ export function getUserFriendlyToolName(toolName: string): string {
   }
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
 }
+
+export const HIDE_STREAMING_XML_TAGS = new Set([
+  'create-tasks',
+  'execute-command',
+  'create-file',
+  'delete-file',
+  'full-file-rewrite',
+  'edit-file',
+  'str-replace',
+  'browser-click-element',
+  'browser-close-tab',
+  'browser-drag-drop',
+  'browser-get-dropdown-options',
+  'browser-go-back',
+  'browser-input-text',
+  'browser-navigate-to',
+  'browser-scroll-down',
+  'browser-scroll-to-text',
+  'browser-scroll-up',
+  'browser-select-dropdown-option',
+  'browser-send-keys',
+  'browser-switch-tab',
+  'browser-wait',
+  'deploy',
+  'ask',
+  'complete',
+  'crawl-webpage',
+  'web-search',
+  'see-image',
+  'execute_data_provider_call',
+  'execute_data_provider_endpoint',
+
+  'execute-data-provider-call',
+  'execute-data-provider-endpoint',
+]);

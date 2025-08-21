@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional
 import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services import redis
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,7 @@ class FeatureFlagManager:
             await redis_client.hset(flag_key, mapping=flag_data)
             await redis_client.sadd(self.flag_list_key, key)
             
-            logger.info(f"Set feature flag {key} to {enabled}")
+            logger.debug(f"Set feature flag {key} to {enabled}")
             return True
         except Exception as e:
             logger.error(f"Failed to set feature flag {key}: {e}")
@@ -66,7 +68,7 @@ class FeatureFlagManager:
             deleted = await redis_client.delete(flag_key)
             if deleted:
                 await redis_client.srem(self.flag_list_key, key)
-                logger.info(f"Deleted feature flag: {key}")
+                logger.debug(f"Deleted feature flag: {key}")
                 return True
             return False
         except Exception as e:
@@ -146,6 +148,34 @@ async def get_flag_details(key: str) -> Optional[Dict[str, str]]:
     return await get_flag_manager().get_flag(key)
 
 
-async def get_all_flags() -> Dict[str, Dict[str, str]]:
-    """Get all feature flags with detailed information"""
-    return await get_flag_manager().get_all_flags_details()
+# Feature Flags
+
+# Custom agents feature flag
+custom_agents = True
+
+# MCP module feature flag  
+mcp_module = True
+
+# Templates API feature flag
+templates_api = True
+
+# Triggers API feature flag
+triggers_api = True
+
+# Workflows API feature flag
+workflows_api = True
+
+# Knowledge base feature flag
+knowledge_base = True
+
+# Pipedream integration feature flag
+pipedream = True
+
+# Credentials API feature flag
+credentials_api = True
+
+# Suna default agent feature flag
+suna_default_agent = True
+
+
+

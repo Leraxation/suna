@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from agentpress.tool import ToolResult, openapi_schema, xml_schema
+from agentpress.tool import ToolResult, openapi_schema, usage_example
 from sandbox.tool_base import SandboxToolsBase
 from utils.files_utils import clean_path
 from agentpress.thread_manager import ThreadManager
@@ -41,13 +41,7 @@ class SandboxDeployTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="deploy",
-        mappings=[
-            {"param_name": "name", "node_type": "attribute", "path": "name"},
-            {"param_name": "directory_path", "node_type": "attribute", "path": "directory_path"}
-        ],
-        example='''
+    @usage_example('''
         <!-- 
         IMPORTANT: Only use this tool when:
         1. The user explicitly requests permanent deployment to production
@@ -62,8 +56,7 @@ class SandboxDeployTool(SandboxToolsBase):
         <parameter name="directory_path">website</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def deploy(self, name: str, directory_path: str) -> ToolResult:
         """
         Deploy a static website (HTML+CSS+JS) from the sandbox to Cloudflare Pages.
@@ -87,7 +80,7 @@ class SandboxDeployTool(SandboxToolsBase):
             
             # Verify the directory exists
             try:
-                dir_info = self.sandbox.fs.get_file_info(full_path)
+                dir_info = await self.sandbox.fs.get_file_info(full_path)
                 if not dir_info.is_dir:
                     return self.fail_response(f"'{directory_path}' is not a directory")
             except Exception as e:
@@ -107,7 +100,7 @@ class SandboxDeployTool(SandboxToolsBase):
                     npx wrangler pages deploy {full_path} --project-name {project_name}))'''
 
                 # Execute the command directly using the sandbox's process.exec method
-                response = self.sandbox.process.exec(f"/bin/sh -c \"{deploy_cmd}\"",
+                response = await self.sandbox.process.exec(f"/bin/sh -c \"{deploy_cmd}\"",
                                  timeout=300)
                 
                 print(f"Deployment command output: {response.result}")

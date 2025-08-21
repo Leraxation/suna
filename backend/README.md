@@ -23,10 +23,10 @@ docker compose down && docker compose up --build
 
 You can run individual services from the docker-compose file. This is particularly useful during development:
 
-### Running only Redis and RabbitMQ
+### Running only Redis
 
 ```bash
-docker compose up redis rabbitmq
+docker compose up redis
 ```
 
 ### Running only the API and Worker
@@ -37,16 +37,16 @@ docker compose up api worker
 
 ## Development Setup
 
-For local development, you might only need to run Redis and RabbitMQ, while working on the API locally. This is useful when:
+For local development, you might only need to run Redis, while working on the API locally. This is useful when:
 
 - You're making changes to the API code and want to test them directly
 - You want to avoid rebuilding the API container on every change
 - You're running the API service directly on your machine
 
-To run just Redis and RabbitMQ for development:
+To run just Redis for development:
 
 ```bash
-docker compose up redis rabbitmq
+docker compose up redis
 ```
 
 Then you can run your API service locally with the following commands:
@@ -79,14 +79,12 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 # Infrastructure
 REDIS_HOST=redis  # Use 'localhost' when running API locally
 REDIS_PORT=6379
-RABBITMQ_HOST=rabbitmq  # Use 'localhost' when running API locally
-RABBITMQ_PORT=5672
-
 # LLM Providers (at least one required)
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENAI_API_KEY=your-openai-key
 OPENROUTER_API_KEY=your-openrouter-key
-MODEL_TO_USE=anthropic/claude-sonnet-4-20250514
+GEMINI_API_KEY=your-gemini-api-key
+MODEL_TO_USE=openrouter/moonshotai/kimi-k2
 
 # Search and Web Scraping
 TAVILY_API_KEY=your-tavily-key
@@ -98,11 +96,6 @@ DAYTONA_API_KEY=your-daytona-key
 DAYTONA_SERVER_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
 
-# Background Job Processing (Required)
-QSTASH_URL=https://qstash.upstash.io
-QSTASH_TOKEN=your-qstash-token
-QSTASH_CURRENT_SIGNING_KEY=your-current-signing-key
-QSTASH_NEXT_SIGNING_KEY=your-next-signing-key
 WEBHOOK_BASE_URL=https://yourdomain.com
 
 # MCP Configuration
@@ -110,7 +103,6 @@ MCP_CREDENTIAL_ENCRYPTION_KEY=your-generated-encryption-key
 
 # Optional APIs
 RAPID_API_KEY=your-rapidapi-key
-SMITHERY_API_KEY=your-smithery-key
 
 NEXT_PUBLIC_URL=http://localhost:3000
 ```
@@ -119,8 +111,7 @@ When running services individually, make sure to:
 
 1. Check your `.env` file and adjust any necessary environment variables
 2. Ensure Redis connection settings match your local setup (default: `localhost:6379`)
-3. Ensure RabbitMQ connection settings match your local setup (default: `localhost:5672`)
-4. Update any service-specific environment variables if needed
+3. Update any service-specific environment variables if needed
 
 ### Important: Redis Host Configuration
 
@@ -129,22 +120,12 @@ When running the API locally with Redis in Docker, you need to set the correct R
 - For Docker-to-Docker communication (when running both services in Docker): use `REDIS_HOST=redis`
 - For local-to-Docker communication (when running API locally): use `REDIS_HOST=localhost`
 
-### Important: RabbitMQ Host Configuration
-
-When running the API locally with RabbitMQ in Docker, you need to set the correct RabbitMQ host in your `.env` file:
-
-- For Docker-to-Docker communication (when running both services in Docker): use `RABBITMQ_HOST=rabbitmq`
-- For local-to-Docker communication (when running API locally): use `RABBITMQ_HOST=localhost`
-
 Example `.env` configuration for local development:
 
 ```sh
 REDIS_HOST=localhost # (instead of 'redis')
 REDIS_PORT=6379
 REDIS_PASSWORD=
-
-RABBITMQ_HOST=localhost # (instead of 'rabbitmq')
-RABBITMQ_PORT=5672
 ```
 
 ---

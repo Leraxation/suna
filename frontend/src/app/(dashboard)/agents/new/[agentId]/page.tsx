@@ -27,6 +27,9 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export default function AgentConfigurationPage() {
   const params = useParams();
   const router = useRouter();
+  if (!params) {
+    throw new Error('Route params are missing');
+  }
   const agentId = params.agentId as string;
 
   const { data: agent, isLoading, error } = useAgent(agentId);
@@ -36,7 +39,18 @@ export default function AgentConfigurationPage() {
   // Ref to track if initial layout has been applied (for sidebar closing)
   const initialLayoutAppliedRef = useRef(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    description: string;
+    system_prompt: string;
+    agentpress_tools: {};
+    configured_mcps: any[];
+    custom_mcps: any[];
+    is_default: boolean;
+    avatar: string;
+    avatar_color: string;
+    agent_id: string;
+  }>({
     name: '',
     description: '',
     system_prompt: '',
@@ -46,6 +60,7 @@ export default function AgentConfigurationPage() {
     is_default: false,
     avatar: '',
     avatar_color: '',
+    agent_id: '', // Added agent_id with default empty string
   });
 
   const originalDataRef = useRef<typeof formData | null>(null);
@@ -76,12 +91,12 @@ export default function AgentConfigurationPage() {
         is_default: agentData.is_default || false,
         avatar: agentData.avatar || '',
         avatar_color: agentData.avatar_color || '',
+        agent_id: agentData.agent_id || '', // Added agent_id from agent data
       };
       setFormData(initialData);
       originalDataRef.current = { ...initialData };
     }
   }, [agent]);
-
 
   useEffect(() => {
     if (error) {
@@ -105,7 +120,8 @@ export default function AgentConfigurationPage() {
         newData.system_prompt !== originalData.system_prompt ||
         newData.is_default !== originalData.is_default ||
         newData.avatar !== originalData.avatar ||
-        newData.avatar_color !== originalData.avatar_color) {
+        newData.avatar_color !== originalData.avatar_color ||
+        newData.agent_id !== originalData.agent_id) { // Added agent_id check
       return true;
     }
     if (JSON.stringify(newData.agentpress_tools) !== JSON.stringify(originalData.agentpress_tools) ||

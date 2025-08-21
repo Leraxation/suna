@@ -83,7 +83,7 @@ export function ShareModal({ isOpen, onClose, threadId, projectId }: ShareModalP
 
   const generateShareLink = () => {
     if (!threadId) return ""
-    return `${process.env.NEXT_PUBLIC_URL || window.location.origin}/share/${threadId}`
+    return `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/share/${threadId}`
   }
 
   const createShareLink = async () => {
@@ -122,7 +122,6 @@ export function ShareModal({ isOpen, onClose, threadId, projectId }: ShareModalP
   }
 
   const updatePublicStatus = async (isPublic: boolean) => {
-    console.log("Updating public status for thread:", threadId, "and project:", projectId, "to", isPublic)
     if (!threadId || !projectId) return
 
     await updateProjectMutation.mutateAsync({

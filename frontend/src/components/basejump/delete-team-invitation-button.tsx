@@ -53,7 +53,7 @@ export default function DeleteTeamInvitationButton({ invitationId }: Props) {
           </Button>
           <form>
             <input type="hidden" name="invitationId" value={invitationId} />
-            <input type="hidden" name="returnPath" value={returnPath} />
+            <input type="hidden" name="returnPath" value={returnPath || ''} />
             <SubmitButton
               variant="destructive"
               formAction={deleteInvitation}

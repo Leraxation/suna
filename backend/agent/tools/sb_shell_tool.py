@@ -1,7 +1,9 @@
+import asyncio
 from typing import Optional, Dict, Any
 import time
+import asyncio
 from uuid import uuid4
-from agentpress.tool import ToolResult, openapi_schema, xml_schema
+from agentpress.tool import ToolResult, openapi_schema, usage_example
 from sandbox.tool_base import SandboxToolsBase
 from agentpress.thread_manager import ThreadManager
 
@@ -20,7 +22,7 @@ class SandboxShellTool(SandboxToolsBase):
             session_id = str(uuid4())
             try:
                 await self._ensure_sandbox()  # Ensure sandbox is initialized
-                self.sandbox.process.create_session(session_id)
+                await self.sandbox.process.create_session(session_id)
                 self._sessions[session_name] = session_id
             except Exception as e:
                 raise RuntimeError(f"Failed to create session: {str(e)}")
@@ -31,7 +33,7 @@ class SandboxShellTool(SandboxToolsBase):
         if session_name in self._sessions:
             try:
                 await self._ensure_sandbox()  # Ensure sandbox is initialized
-                self.sandbox.process.delete_session(self._sessions[session_name])
+                await self.sandbox.process.delete_session(self._sessions[session_name])
                 del self._sessions[session_name]
             except Exception as e:
                 print(f"Warning: Failed to cleanup session {session_name}: {str(e)}")
@@ -71,16 +73,7 @@ class SandboxShellTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="execute-command",
-        mappings=[
-            {"param_name": "command", "node_type": "content", "path": "."},
-            {"param_name": "folder", "node_type": "attribute", "path": ".", "required": False},
-            {"param_name": "session_name", "node_type": "attribute", "path": ".", "required": False},
-            {"param_name": "blocking", "node_type": "attribute", "path": ".", "required": False},
-            {"param_name": "timeout", "node_type": "attribute", "path": ".", "required": False}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="execute_command">
         <parameter name="command">npm run dev</parameter>
@@ -105,8 +98,7 @@ class SandboxShellTool(SandboxToolsBase):
         <parameter name="timeout">300</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def execute_command(
         self, 
         command: str, 
@@ -134,41 +126,46 @@ class SandboxShellTool(SandboxToolsBase):
             session_exists = "not_exists" not in check_session.get("output", "")
             
             if not session_exists:
-                # Create a new tmux session
-                await self._execute_raw_command(f"tmux new-session -d -s {session_name}")
-                
-            # Ensure we're in the correct directory and send command to tmux
-            full_command = f"cd {cwd} && {command}"
-            wrapped_command = full_command.replace('"', '\\"')  # Escape double quotes
+                # Create a new tmux session with the specified working directory
+                await self._execute_raw_command(f"tmux new-session -d -s {session_name} -c {cwd}")
             
-            # Send command to tmux session
-            await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_command}" Enter')
+            # Escape double quotes for the command
+            wrapped_command = command.replace('"', '\\"')
             
             if blocking:
-                # For blocking execution, wait and capture output
+                # For blocking execution, use a more reliable approach
+                # Add a unique marker to detect command completion
+                marker = f"COMMAND_DONE_{str(uuid4())[:8]}"
+                completion_command = self._format_completion_command(command, marker)
+                wrapped_completion_command = completion_command.replace('"', '\\"')
+                
+                # Send the command with completion marker
+                await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_completion_command}" Enter')
+                
                 start_time = time.time()
+                final_output = ""
+                
                 while (time.time() - start_time) < timeout:
-                    # Wait a bit before checking
-                    time.sleep(2)
+                    # Wait a shorter interval for more responsive checking
+                    await asyncio.sleep(0.5)
                     
                     # Check if session still exists (command might have exited)
                     check_result = await self._execute_raw_command(f"tmux has-session -t {session_name} 2>/dev/null || echo 'ended'")
                     if "ended" in check_result.get("output", ""):
                         break
                         
-                    # Get current output and check for common completion indicators
+                    # Get current output and check for our completion marker
                     output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
                     current_output = output_result.get("output", "")
-                    
-                    # Check for prompt indicators that suggest command completion
-                    last_lines = current_output.split('\n')[-3:]
-                    completion_indicators = ['$', '#', '>', 'Done', 'Completed', 'Finished', '✓']
-                    if any(indicator in line for indicator in completion_indicators for line in last_lines):
+
+                    if self._is_command_completed(current_output, marker):
+                        final_output = current_output
                         break
                 
-                # Capture final output
-                output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
-                final_output = output_result.get("output", "")
+                # If we didn't get the marker, capture whatever output we have
+                if not final_output:
+                    output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
+                    final_output = output_result.get("output", "")
                 
                 # Kill the session after capture
                 await self._execute_raw_command(f"tmux kill-session -t {session_name}")
@@ -180,6 +177,9 @@ class SandboxShellTool(SandboxToolsBase):
                     "completed": True
                 })
             else:
+                # Send command to tmux session for non-blocking execution
+                await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_command}" Enter')
+                
                 # For non-blocking, just return immediately
                 return self.success_response({
                     "session_name": session_name,
@@ -203,20 +203,20 @@ class SandboxShellTool(SandboxToolsBase):
         session_id = await self._ensure_session("raw_commands")
         
         # Execute command in session
-        from sandbox.sandbox import SessionExecuteRequest
+        from daytona_sdk import SessionExecuteRequest
         req = SessionExecuteRequest(
             command=command,
             var_async=False,
             cwd=self.workspace_path
         )
         
-        response = self.sandbox.process.execute_session_command(
+        response = await self.sandbox.process.execute_session_command(
             session_id=session_id,
             req=req,
             timeout=30  # Short timeout for utility commands
         )
         
-        logs = self.sandbox.process.get_session_command_logs(
+        logs = await self.sandbox.process.get_session_command_logs(
             session_id=session_id,
             command_id=response.cmd_id
         )
@@ -248,13 +248,7 @@ class SandboxShellTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="check-command-output",
-        mappings=[
-            {"param_name": "session_name", "node_type": "attribute", "path": ".", "required": True},
-            {"param_name": "kill_session", "node_type": "attribute", "path": ".", "required": False}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="check_command_output">
         <parameter name="session_name">dev_server</parameter>
@@ -268,8 +262,7 @@ class SandboxShellTool(SandboxToolsBase):
         <parameter name="kill_session">true</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def check_command_output(
         self,
         session_name: str,
@@ -321,19 +314,13 @@ class SandboxShellTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="terminate-command",
-        mappings=[
-            {"param_name": "session_name", "node_type": "attribute", "path": ".", "required": True}
-        ],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="terminate_command">
         <parameter name="session_name">dev_server</parameter>
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def terminate_command(
         self,
         session_name: str
@@ -368,16 +355,12 @@ class SandboxShellTool(SandboxToolsBase):
             }
         }
     })
-    @xml_schema(
-        tag_name="list-commands",
-        mappings=[],
-        example='''
+    @usage_example('''
         <function_calls>
         <invoke name="list_commands">
         </invoke>
         </function_calls>
-        '''
-    )
+        ''')
     async def list_commands(self) -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -409,6 +392,98 @@ class SandboxShellTool(SandboxToolsBase):
                 
         except Exception as e:
             return self.fail_response(f"Error listing commands: {str(e)}")
+
+    def _format_completion_command(self, command: str, marker: str) -> str:
+        """Format command with completion marker, handling heredocs properly."""
+        import re
+        
+        # Check if command contains heredoc syntax
+        # Look for patterns like: << EOF, << 'EOF', << "EOF", <<EOF
+        heredoc_pattern = r'<<\s*[\'"]?\w+[\'"]?'
+        
+        if re.search(heredoc_pattern, command):
+            # For heredoc commands, add the completion marker on a new line
+            # This ensures it executes after the heredoc completes
+            return f"{command}\necho {marker}"
+        else:
+            # For regular commands, use semicolon separator
+            return f"{command} ; echo {marker}"
+
+    def _is_command_completed(self, current_output: str, marker: str) -> bool:
+        """
+        Check if command execution is completed by comparing marker from end to start.
+        
+        Args:
+            current_output: Current output content
+            marker: Completion marker
+            
+        Returns:
+            bool: True if command completed, False otherwise
+        """
+        if not current_output or not marker:
+            return False
+
+        # Find the last complete marker match position to start comparison
+        # Avoid terminal prompt output at the end
+        marker_end_pos = -1
+        for i in range(len(current_output) - len(marker), -1, -1):
+            if current_output[i:i+len(marker)] == marker:
+                marker_end_pos = i + len(marker) - 1
+                break
+        
+        # Start comparison from found marker position or end of output
+        if marker_end_pos != -1:
+            output_idx = marker_end_pos
+            marker_idx = len(marker) - 1
+        else:
+            output_idx = len(current_output) - 1
+            marker_idx = len(marker) - 1
+        
+        # Compare characters from end to start
+        while marker_idx >= 0 and output_idx >= 0:
+            # Skip newlines in current_output
+            if current_output[output_idx] == '\n':
+                output_idx -= 1
+                continue
+                
+            # Compare characters
+            if current_output[output_idx] != marker[marker_idx]:
+                return False
+                
+            # Continue comparison
+            output_idx -= 1
+            marker_idx -= 1
+        
+        # If marker not fully matched
+        if marker_idx >= 0:
+            return False
+            
+        # Check if preceded by "echo " (command just started)
+        check_count = 0
+        echo_chars = "echo "
+        echo_idx = len(echo_chars) - 1
+        
+        while output_idx >= 0 and check_count < 5:
+            # Skip newlines
+            if current_output[output_idx] == '\n':
+                output_idx -= 1
+                continue
+                
+            check_count += 1
+            
+            # Check for "echo " pattern
+            if echo_idx >= 0 and current_output[output_idx] == echo_chars[echo_idx]:
+                echo_idx -= 1
+            else:
+                echo_idx = len(echo_chars) - 1
+                
+            output_idx -= 1
+            
+        # If "echo " found, command just started
+        if echo_idx < 0:
+            return False
+            
+        return True
 
     async def cleanup(self):
         """Clean up all sessions."""

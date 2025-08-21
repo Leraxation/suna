@@ -1,33 +1,48 @@
+
 services:
   redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    image: redis:8-alpine
     volumes:
       - redis_data:/data
       - ./backend/services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
-    command: redis-server /usr/local/etc/redis/redis.conf --save 60 1 --loglevel warning
+    restart: unless-stopped
+    networks:
+      - app-network
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes --bind 0.0.0.0 --protected-mode no --maxmemory 8gb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+<<<<<<< HEAD
   rabbitmq:
     image: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped
+    networks:
+      - app-network
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+=======
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
   backend:
     image: ghcr.io/suna-ai/suna-backend:latest
     platform: linux/amd64
@@ -37,23 +52,50 @@ services:
     ports:
       - "8000:8000"
     volumes:
+<<<<<<< HEAD
+      - ./backend:/app
       - ./backend/.env:/app/.env:ro
+      - ./backend/logs:/app/logs
+=======
+      - ./backend/.env:/app/.env
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
     env_file:
       - ./backend/.env
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_SSL=False
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
+    restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    networks:
+      - app-network
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=False
+<<<<<<< HEAD
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - LOG_LEVEL=INFO
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+=======
+    depends_on:
+      redis:
+        condition: service_healthy
       worker:
         condition: service_started
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
   worker:
     image: ghcr.io/suna-ai/suna-backend:latest
@@ -63,21 +105,44 @@ services:
       dockerfile: Dockerfile
     command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
     volumes:
+      - ./backend:/app
       - ./backend/.env:/app/.env:ro
+      - ./backend/worker-logs:/app/logs
     env_file:
       - ./backend/.env
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_SSL=False
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
+    restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    networks:
+      - app-network
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=False
+<<<<<<< HEAD
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - LOG_LEVEL=INFO
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "uv", "run", "worker_health.py"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
+=======
+    depends_on:
+      redis:
+        condition: service_healthy
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
   frontend:
     init: true
@@ -88,12 +153,27 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend/.env.local:/app/.env.local:ro
+<<<<<<< HEAD
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
+      - NEXT_PUBLIC_VERCEL_ENV=development
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-YOUR_GOOGLE_CLIENT_ID_HERE}
     command: ["npm", "run", "start"]
+=======
+>>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
     depends_on:
       - backend
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   redis_data:
-  rabbitmq_data:

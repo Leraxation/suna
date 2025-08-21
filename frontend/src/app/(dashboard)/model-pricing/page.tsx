@@ -164,12 +164,15 @@ export default function PricingPage() {
       }) || [];
 
     return filteredModels
-      .map((v) => ({
-        ...v,
-        display_name: allModels.find((m) => m.id === v.short_name)?.label,
-        priority: allModels.find((m) => m.id === v.short_name)?.priority,
-        requiresSubscription: allModels.find((m) => m.id === v.short_name)?.requiresSubscription,
-      }))
+      .map((v) => {
+        const foundModel = allModels.find((m: Model) => m.id === v.short_name) as Model | undefined;
+        return {
+          ...v,
+          display_name: foundModel?.display_name ?? v.id, // Ensure display_name is always a string
+          priority: foundModel?.priority,
+          requiresSubscription: foundModel?.requires_subscription,
+        };
+      })
       .sort((a, b) => {
         // First by free/premium status (premium first)
         if (a.requiresSubscription !== b.requiresSubscription) {
@@ -182,7 +185,7 @@ export default function PricingPage() {
         }
         
         // Finally by name (alphabetical)
-        return (a.display_name ?? a.id).localeCompare(b.display_name ?? b.id);
+        return a.display_name.localeCompare(b.display_name);
       });
   }, [modelsResponse?.models, allModels]);
 
@@ -507,3 +510,4 @@ export default function PricingPage() {
     </div>
   );
 }
+

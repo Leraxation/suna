@@ -13,7 +13,7 @@ function LegalContent() {
   const pathname = usePathname();
 
   // Get tab from URL or default to "terms"
-  const tabParam = searchParams.get('tab');
+  const tabParam = searchParams?.get('tab');
   const [activeTab, setActiveTab] = useState<'terms' | 'privacy'>(
     tabParam === 'terms' || tabParam === 'privacy' ? tabParam : 'terms',
   );
@@ -24,7 +24,7 @@ function LegalContent() {
 
   // Function to update URL without refreshing the page
   const updateUrl = (tab: string) => {
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(searchParams || '');
     params.set('tab', tab);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };

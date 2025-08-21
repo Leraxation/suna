@@ -1,0 +1,13 @@
+import DeepSearchButton from '../components/DeepSearchButton';
+import { useState } from 'react';
+
+export default function Home() {
+  const [results, setResults] = useState(null);
+  return (
+    <div>
+      <h1>Suna AI</h1>
+      <DeepSearchButton setResults={setResults} />
+      {results && <pre>{JSON.stringify(results, null, 2)}</pre>}
+    </div>
+  );
+}

@@ -96,7 +96,8 @@ export const UpdateAgentDialog = ({ agentId, isOpen, onOpenChange, onAgentUpdate
         ...prev.agentpress_tools,
         [toolName]: {
           ...prev.agentpress_tools?.[toolName],
-          enabled
+          enabled,
+          description: prev.agentpress_tools?.[toolName]?.description || ''
         }
       }
     }));

@@ -40,6 +40,16 @@ def get_setup_method():
     return progress.get("data", {}).get("setup_method")
 
 
+def check_docker_available():
+    """Check if Docker is available and running."""
+    try:
+        result = subprocess.run(["docker", "version"], capture_output=True, shell=IS_WINDOWS, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print(f"{Colors.RED}❌ Docker is not running or not installed.{Colors.ENDC}")
+        print(f"{Colors.YELLOW}Please start Docker and try again.{Colors.ENDC}")
+        return False
+
 def check_docker_compose_up():
     result = subprocess.run(
         ["docker", "compose", "ps", "-q"],
@@ -57,17 +67,17 @@ def print_manual_instructions():
     print("To start Suna, you need to run these commands in separate terminals:\n")
 
     print(f"{Colors.BOLD}1. Start Infrastructure (in project root):{Colors.ENDC}")
-    print(f"{Colors.CYAN}   docker compose up redis rabbitmq -d{Colors.ENDC}\n")
+    print(f"{Colors.CYAN}   docker compose up redis -d{Colors.ENDC}\n")
 
     print(f"{Colors.BOLD}2. Start Frontend (in a new terminal):{Colors.ENDC}")
     print(f"{Colors.CYAN}   cd frontend && npm run dev{Colors.ENDC}\n")
 
     print(f"{Colors.BOLD}3. Start Backend (in a new terminal):{Colors.ENDC}")
-    print(f"{Colors.CYAN}   cd backend && python run api.py{Colors.ENDC}\n")
+    print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}\n")
 
     print(f"{Colors.BOLD}4. Start Background Worker (in a new terminal):{Colors.ENDC}")
     print(
-        f"{Colors.CYAN}   cd backend && python run -m dramatiq run_agent_background{Colors.ENDC}\n"
+        f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}\n"
     )
 
     print("Once all services are running, access Suna at: http://localhost:3000\n")
@@ -96,17 +106,17 @@ def main():
         setup_method = "docker"
 
     if setup_method == "manual":
-        # For manual setup, we only manage infrastructure services (redis, rabbitmq)
+        # For manual setup, we only manage infrastructure services (redis)
         # and show instructions for the rest
         print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
-        print("Managing infrastructure services (Redis, RabbitMQ)...\n")
+        print("Managing infrastructure services (Redis)...\n")
 
         force = "-f" in sys.argv
         if force:
             print("Force awakened. Skipping confirmation.")
 
         is_infra_up = subprocess.run(
-            ["docker", "compose", "ps", "-q", "redis", "rabbitmq"],
+            ["docker", "compose", "ps", "-q", "redis"],
             capture_output=True,
             text=True,
             shell=IS_WINDOWS,
@@ -136,7 +146,7 @@ def main():
             print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
         else:
             subprocess.run(
-                ["docker", "compose", "up", "redis", "rabbitmq", "-d"], shell=IS_WINDOWS
+                ["docker", "compose", "up", "redis", "-d"], shell=IS_WINDOWS
             )
             print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
             print_manual_instructions()
@@ -149,6 +159,9 @@ def main():
         if force:
             print("Force awakened. Skipping confirmation.")
 
+        if not check_docker_available():
+            return
+            
         is_up = check_docker_compose_up()
 
         if is_up:
