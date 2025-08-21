@@ -1,7 +1,6 @@
 [build]
-# Use Dockerfile for building instead of auto-detection
-builder = "nixpacks"
-buildCommand = "docker build -t suna-backend ."
+# Use Dockerfile for building
+builder = "dockerfile"
 
 [deploy]
 # Start command for the FastAPI application
@@ -13,7 +12,11 @@ healthcheckTimeout = 300
 
 # Environment configuration
 [env]
-PORT = "8000"
 ENV_MODE = "production"
 PYTHONPATH = "/app"
 WORKERS = "8"
+REDIS_HOST = "localhost"
+REDIS_PORT = "6379"
+REDIS_SSL = "false"
+API_KEY_SECRET = "railway-production-secret-key-2024"
+MCP_CREDENTIAL_ENCRYPTION_KEY = "railway-mcp-encryption-key-2024"
