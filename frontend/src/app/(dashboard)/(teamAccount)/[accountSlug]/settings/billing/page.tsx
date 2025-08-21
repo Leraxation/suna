@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-import { createClient } from '@/lib/supabase/server';
-import AccountBillingStatus from '@/components/billing/account-billing-status';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { notFound } from 'next/navigation';
-=======
 'use client';
 
 import React, { useState } from 'react';
@@ -15,7 +9,6 @@ import { useAccountBySlug } from '@/hooks/react-query';
 import { useSharedSubscription } from '@/contexts/SubscriptionContext';
 import { isLocalMode } from '@/lib/config';
 import Link from 'next/link';
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
 const returnUrl = process.env.NEXT_PUBLIC_APP_URL as string;
 
@@ -23,37 +16,11 @@ type AccountParams = {
   accountSlug: string;
 };
 
-export default async function TeamBillingPage({
+export default function TeamBillingPage({
   params,
 }: {
   params: Promise<AccountParams>;
 }) {
-<<<<<<< HEAD
-  const { accountSlug } = await params;
-
-  try {
-    const supabaseClient = await createClient();
-    const { data: teamAccount, error } = await supabaseClient.rpc('get_account_by_slug', {
-      slug: accountSlug,
-    });
-
-    if (error) {
-      console.error('Error loading account data:', error);
-      return (
-        <Alert
-          variant="destructive"
-          className="border-red-300 dark:border-red-800 rounded-xl"
-        >
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>Failed to load account data</AlertDescription>
-        </Alert>
-      );
-    }
-
-    if (!teamAccount) {
-      notFound();
-    }
-=======
   const unwrappedParams = React.use(params);
   const { accountSlug } = unwrappedParams;
   const [showBillingModal, setShowBillingModal] = useState(false);
@@ -69,51 +36,14 @@ export default async function TeamBillingPage({
     isLoading: subscriptionLoading,
     error: subscriptionError,
   } = useSharedSubscription();
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
-    if (teamAccount.account_role !== 'owner') {
-      return (
-        <Alert
-          variant="destructive"
-          className="border-red-300 dark:border-red-800 rounded-xl"
-        >
-          <AlertTitle>Access Denied</AlertTitle>
-          <AlertDescription>
-            You do not have permission to access this page.
-          </AlertDescription>
-        </Alert>
-      );
-    }
-
-    return (
-      <div className="space-y-6">
-        <div>
-          <h3 className="text-lg font-medium text-card-title">Team Billing</h3>
-          <p className="text-sm text-foreground/70">
-            Manage your team's subscription and billing details.
-          </p>
-        </div>
-
-        <AccountBillingStatus
-          accountId={teamAccount.account_id}
-          returnUrl={`${returnUrl}/${accountSlug}/settings/billing`}
-        />
-      </div>
-    );
-  } catch (err) {
-    console.error('Unexpected error:', err);
+  if (error) {
     return (
       <Alert
         variant="destructive"
         className="border-red-300 dark:border-red-800 rounded-xl"
       >
         <AlertTitle>Error</AlertTitle>
-<<<<<<< HEAD
-        <AlertDescription>An unexpected error occurred</AlertDescription>
-      </Alert>
-    );
-  }
-=======
         <AlertDescription>
           {error instanceof Error ? error.message : 'Failed to load account data'}
         </AlertDescription>
@@ -242,5 +172,4 @@ export default async function TeamBillingPage({
       </div>
     </div>
   );
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 }

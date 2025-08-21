@@ -355,22 +355,6 @@ export default function ThreadPage({
             setProjectName('Shared Conversation');
           }
 
-<<<<<<< HEAD
-        const unifiedMessages = (messagesData || [])
-          .filter((msg: ApiMessageType) => msg.type !== 'status')
-            .map((msg: ApiMessageType) => ({
-            message_id: msg.message_id || null,
-            thread_id: msg.thread_id || threadId,
-            type: (msg.type || 'system') as UnifiedMessage['type'],
-            is_llm_message: Boolean(msg.is_llm_message),
-            content: msg.content || '',
-            metadata: msg.metadata || '{}',
-            created_at: msg.created_at || new Date().toISOString(),
-            updated_at: msg.updated_at || new Date().toISOString(),
-            agent_id: msg.agent_id,
-            agents: msg.agents,
-            }));
-=======
           const unifiedMessages = (messagesData || [])
             .filter((msg) => msg.type !== 'status')
             .map((msg: ApiMessageType) => {
@@ -398,7 +382,6 @@ export default function ThreadPage({
                 agents: (msg as any).agents,
               };
             });
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
           setMessages(unifiedMessages);
           const historicalToolPairs: ToolCallInput[] = [];

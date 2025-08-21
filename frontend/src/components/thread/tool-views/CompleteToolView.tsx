@@ -71,12 +71,8 @@ export function CompleteToolView({
   useEffect(() => {
     if (assistantContent) {
       try {
-<<<<<<< HEAD
-        const contentStr = normalizeContentToString(assistantContent) || '';
-=======
         const contentStr = normalizeContentToString(assistantContent);
         if (!contentStr) return;
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
         let cleanContent = contentStr
           .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
@@ -110,13 +106,8 @@ export function CompleteToolView({
   useEffect(() => {
     if (toolContent && !isStreaming) {
       try {
-<<<<<<< HEAD
-        const contentStr = normalizeContentToString(toolContent) || '';
-=======
         const contentStr = normalizeContentToString(toolContent);
         if (!contentStr) return;
-        
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
         const toolResultMatch = contentStr.match(/ToolResult\([^)]*output=['"]([^'"]+)['"]/);
         if (toolResultMatch) {
           setCompleteData(prev => ({ ...prev, result: toolResultMatch[1] }));

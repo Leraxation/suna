@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { getAgentAvatar } from '../agents/_utils/get-agent-style';
+import { getAgentAvatar } from '@/components/agents/utils/get-agent-style';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CredentialProfileSelector } from '@/components/workflows/CredentialProfileSelector';
 

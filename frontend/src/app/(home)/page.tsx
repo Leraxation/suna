@@ -1,33 +1,3 @@
-<<<<<<< HEAD
-export default function HomePage() {
-  return (
-    <main className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-16">
-        <div className="text-center space-y-8">
-          <h1 className="text-4xl md:text-6xl font-bold text-foreground">
-            Welcome to Suna AI
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            The Generalist AI Agent that can act on your behalf.
-          </p>
-          <div className="flex justify-center gap-4">
-            <a 
-              href="/dashboard" 
-              className="bg-primary text-primary-foreground px-6 py-3 rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Get Started
-            </a>
-            <a 
-              href="https://github.com/kortix-ai/suna" 
-              className="border border-border px-6 py-3 rounded-lg hover:bg-accent transition-colors"
-            >
-              View on GitHub
-            </a>
-          </div>
-        </div>
-      </div>
-    </main>
-=======
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -69,6 +39,5 @@ export default function Home() {
         </main>
       </BackgroundAALChecker>
     </>
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
   );
 }

@@ -5,13 +5,8 @@ import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils'
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
-<<<<<<< HEAD
 import { ApiMessageType, UnifiedMessage } from '@/components/thread/types';
-import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio } from 'lucide-react';
-=======
-import { ApiMessageType } from '@/components/thread/types';
 import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2, Copy, Check, Globe, Wrench } from 'lucide-react';
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';

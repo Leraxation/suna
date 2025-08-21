@@ -6,12 +6,9 @@ import './globals.css';
 import { Providers } from './providers';
 import { Toaster } from '@/components/ui/sonner';
 import Script from 'next/script';
-<<<<<<< HEAD
 import React from 'react';
-=======
 import { PostHogIdentify } from '@/components/posthog-identify';
 import '@/lib/polyfills'; // Load polyfills early
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -160,15 +157,9 @@ export default function RootLayout({
             {children}
             <Toaster />
           </Providers>
-<<<<<<< HEAD
           {/* Analytics components - Only in production */}
           {isProduction && <ProductionAnalytics />}
-=======
-          <Analytics />
-          <GoogleAnalytics gaId="G-6ETJFB3PT3" />
-          <SpeedInsights />
           <PostHogIdentify />
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
         </ThemeProvider>
       </body>
     </html>

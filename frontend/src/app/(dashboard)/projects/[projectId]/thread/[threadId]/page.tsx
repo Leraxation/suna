@@ -667,12 +667,8 @@ useEffect(() => {
         debugMode={debugMode}
         isMobile={isMobile}
         initialLoadCompleted={initialLoadCompleted}
-<<<<<<< HEAD
         agentName={agent && agent.name ? agent.name : undefined}
-=======
-        agentName={agent && agent.name}
         disableInitialAnimation={!initialLoadCompleted && toolCalls.length > 0}
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
       >
         {/* {workflowId && (
           <div className="px-4 pt-4">
@@ -692,16 +688,11 @@ useEffect(() => {
           sandboxId={sandboxId || undefined}
           project={project ?? undefined}
           debugMode={debugMode}
-<<<<<<< HEAD
           agentName={agent?.name}
           agentAvatar={agent && agent.avatar}
-=======
-          agentName={agent && agent.name}
-          agentAvatar={undefined}
           agentMetadata={agent?.metadata}
           agentData={agent}
           scrollContainerRef={scrollContainerRef}
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
         />
 
 
@@ -765,4 +756,4 @@ useEffect(() => {
       )}
     </>
   );
-} 
+}

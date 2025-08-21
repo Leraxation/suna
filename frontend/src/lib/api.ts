@@ -2187,7 +2187,6 @@ export const transcribeAudio = async (audioFile: File): Promise<TranscriptionRes
     handleApiError(error, { operation: 'transcribe audio', resource: 'speech-to-text' });
     throw error;
   }
-<<<<<<< HEAD
 };
 
 export const getAgentBuilderChatHistory = async (agentId: string): Promise<{messages: Message[], thread_id: string | null}> => {
@@ -2746,9 +2745,3 @@ export const cancelExecution = async (executionId: string): Promise<void> => {
     throw error;
   }
 };
-
-
-
-=======
-};
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc

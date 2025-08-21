@@ -468,7 +468,16 @@ async def start_agent(
     if not can_run:
         raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
-<<<<<<< HEAD
+    if not limit_check['can_start']:
+        error_detail = {
+            "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
+            "running_thread_ids": limit_check['running_thread_ids'],
+            "running_count": limit_check['running_count'],
+            "limit": config.MAX_PARALLEL_AGENT_RUNS
+        }
+        logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
+        raise HTTPException(status_code=429, detail=error_detail)
+
     active_run_id = await check_for_active_project_agent_run(client, project_id)
     if active_run_id:
         logger.info(f"Stopping existing agent run {active_run_id} for project {project_id}")
@@ -503,17 +512,6 @@ async def start_agent(
         else:
             logger.error(f"Failed to start sandbox for project {project_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to initialize sandbox: {str(e)}")
-=======
-    if not limit_check['can_start']:
-        error_detail = {
-            "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
-            "running_thread_ids": limit_check['running_thread_ids'],
-            "running_count": limit_check['running_count'],
-            "limit": config.MAX_PARALLEL_AGENT_RUNS
-        }
-        logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
-        raise HTTPException(status_code=429, detail=error_detail)
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
     effective_model = model_name
     if not model_name and agent_config and agent_config.get('model'):
@@ -1011,17 +1009,11 @@ async def initiate_agent_with_files(
     target_agent_id: Optional[str] = Form(None),
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
-<<<<<<< HEAD
-    """Initiate a new agent session with optional file attachments."""
-    print("=== AGENT INITIATE FUNCTION CALLED ===")
-    logger.error("=== AGENT INITIATE FUNCTION CALLED ===")
-=======
     """
     Initiate a new agent session with optional file attachments.
 
     [WARNING] Keep in sync with create thread endpoint.
     """
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
     global instance_id # Ensure instance_id is accessible
     if not instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
@@ -1171,62 +1163,10 @@ async def initiate_agent_with_files(
         # which will create it lazily when tools require it.
         sandbox_id = None
         sandbox = None
-<<<<<<< HEAD
-        sandbox_pass = str(uuid.uuid4())
-        vnc_url = None
-        website_url = None
-        token = None
-        
-        # Skip sandbox creation in local development mode if disabled
-        logger.debug(f"ENV_MODE: {config.ENV_MODE.value}, DISABLE_SANDBOX_IN_DEV: {config.DISABLE_SANDBOX_IN_DEV}")
-        if config.ENV_MODE.value == "local" and config.DISABLE_SANDBOX_IN_DEV:
-            logger.warning("Sandbox creation disabled in local development mode")
-            sandbox_id = "dev-sandbox-disabled"
-            vnc_url = "http://localhost:6080"
-            website_url = "http://localhost:8080"
-            token = "dev-token"
-        else:
-            try:
-                logger.debug(f"About to call create_sandbox with sandbox_pass={sandbox_pass}, project_id={project_id}")
-                logger.debug(f"create_sandbox function: {create_sandbox}")
-                sandbox = create_sandbox(sandbox_pass, project_id)
-                logger.debug(f"create_sandbox returned: {sandbox}")
-                sandbox_id = sandbox.id
-                logger.debug(f"sandbox.id: {sandbox_id}")
-                logger.info(f"Created new sandbox {sandbox_id} for project {project_id}")
-                
-                # Get preview links
-                vnc_link = sandbox.get_preview_link(6080)
-                website_link = sandbox.get_preview_link(8080)
-                vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
-                website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-                if hasattr(vnc_link, 'token'):
-                    token = vnc_link.token
-                elif "token='" in str(vnc_link):
-                    token = str(vnc_link).split("token='")[1].split("'")[0]
-            except Exception as e:
-                logger.error(f"Error creating sandbox: {str(e)}")
-                await client.table('projects').delete().eq('project_id', project_id).execute()
-                if sandbox_id and sandbox_id != "dev-sandbox-disabled":
-                    try: await delete_sandbox(sandbox_id)
-                    except Exception as e: pass
-                
-                # In development mode, continue without sandbox if creation fails
-                logger.debug(f"Exception handler - ENV_MODE: {config.ENV_MODE.value}, DISABLE_SANDBOX_IN_DEV: {config.DISABLE_SANDBOX_IN_DEV}")
-                if config.ENV_MODE.value == "local" and config.DISABLE_SANDBOX_IN_DEV:
-                    logger.warning("Sandbox creation failed in dev mode, continuing without sandbox")
-                    sandbox_id = "dev-sandbox-disabled"
-                    vnc_url = "http://localhost:6080"
-                    website_url = "http://localhost:8080"
-                    token = "dev-token"
-                else:
-                    raise Exception("Failed to create sandbox")
-=======
         sandbox_pass = None
         vnc_url = None
         website_url = None
         token = None
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
         if files:
             # 3. Create Sandbox (lazy): only create now if files were uploaded and need the

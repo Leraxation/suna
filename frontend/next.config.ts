@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
-<<<<<<< HEAD
-let nextConfig: NextConfig = {
+const nextConfig: NextConfig = {
+  output: (process.env.NEXT_OUTPUT as 'standalone') || undefined,
   eslint: {
     // Warning: This allows production builds to successfully complete even if
     // your project has ESLint errors.
@@ -18,9 +18,7 @@ let nextConfig: NextConfig = {
     };
 
     return config;
-=======
-const nextConfig = (): NextConfig => ({
-  output: (process.env.NEXT_OUTPUT as 'standalone') || undefined,
+  },
   async rewrites() {
     return [
       {
@@ -36,9 +34,8 @@ const nextConfig = (): NextConfig => ({
         destination: 'https://eu.i.posthog.com/flags',
       },
     ];
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
   },
   skipTrailingSlashRedirect: true,
-});
+};
 
 export default nextConfig;

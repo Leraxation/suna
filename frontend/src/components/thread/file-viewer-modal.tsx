@@ -1139,11 +1139,7 @@ export function FileViewerModal({
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <div className="text-xs text-muted-foreground px-1">
-<<<<<<< HEAD
                     {currentFileIndex + 1} / {filePathList?.length || 0}
-=======
-                    {currentFileIndex + 1} / {(filePathList?.length || 0)}
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                   </div>
                   <Button
                     variant="outline"

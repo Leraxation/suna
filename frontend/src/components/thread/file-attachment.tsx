@@ -248,11 +248,7 @@ export function FileAttachment({
     if (isImage && showPreview) {
         // Use custom height for images if provided through CSS variable
         const imageHeight = isGridLayout
-<<<<<<< HEAD
             ? (customStyle?.['--attachment-height'] as string) || '54px'
-=======
-            ? (customStyle as any)['--attachment-height'] as string
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
             : '54px';
 
         // Show loading state for images
@@ -271,14 +267,9 @@ export function FileAttachment({
                     )}
                     style={{
                         maxWidth: "100%",
-<<<<<<< HEAD
-                        height: isGridLayout ? imageHeight : 'auto',
-                        ...(customStyle || {})
-=======
                         height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
                         maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
                         ...customStyle
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     }}
                     title={filename}
                 >
@@ -303,14 +294,9 @@ export function FileAttachment({
                     )}
                     style={{
                         maxWidth: "100%",
-<<<<<<< HEAD
-                        height: isGridLayout ? imageHeight : 'auto',
-                        ...(customStyle || {})
-=======
                         height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
                         maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
                         ...customStyle
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     }}
                     title={filename}
                 >
@@ -334,23 +320,14 @@ export function FileAttachment({
                 )}
                 style={{
                     maxWidth: "100%", // Ensure doesn't exceed container width
-<<<<<<< HEAD
-                    height: isGridLayout ? imageHeight : 'auto',
-                    ...(customStyle || {})
-=======
                     height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
                     maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
                     ...customStyle
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                 }}
                 title={filename}
             >
                 <img
-<<<<<<< HEAD
                     src={sandboxId && session?.access_token ? (imageUrl || fileUrl) : fileUrl}
-=======
-                    src={sandboxId && session?.access_token ? imageUrl : (fileUrl || '')}
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                     alt={filename}
                     className={cn(
                         "max-h-full max-w-full", // Respect parent constraints
@@ -435,12 +412,8 @@ export function FileAttachment({
                 style={{
                     gridColumn: "1 / -1", // Make it take full width in grid
                     width: "100%",        // Ensure full width
-<<<<<<< HEAD
-                    ...(customStyle || {})
-=======
                     minWidth: 0,          // Prevent flex shrinking issues
                     ...customStyle
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                 }}
                 onClick={hasError ? handleClick : undefined} // Make clickable if error
             >

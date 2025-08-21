@@ -38,16 +38,10 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
-<<<<<<< HEAD
-  const mode = searchParams?.get('mode');
-  const returnUrl = searchParams?.get('returnUrl');
-  const message = searchParams?.get('message');
-=======
   const mode = searchParams.get('mode');
   const returnUrl = searchParams.get('returnUrl');
   const message = searchParams.get('message');
   const { enabled: customAgentsEnabled } = useFeatureFlag("custom_agents");
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
   const isSignUp = mode === 'signup';
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -354,30 +348,6 @@ function LoginContent() {
                     </div>
                   )}
                 </div>
-<<<<<<< HEAD
-
-                {!isSignUp && (
-                  <div className="text-center pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setForgotPasswordOpen(true)}
-                      className="text-sm text-primary hover:underline"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                )}
-              </form>
-
-              <div className="mt-8 text-center text-xs text-muted-foreground">
-                By continuing, you agree to our{' '}
-                <Link href="/legal?tab=terms" className="text-primary hover:underline">
-                  Terms of Service
-                </Link>{' '}
-                and{' '}
-                <Link href="/legal?tab=privacy" className="text-primary hover:underline">
-                  Privacy Policy
-=======
               </div>
             </form>
             
@@ -404,9 +374,19 @@ function LoginContent() {
                     ? 'Already have an account? Sign in' 
                     : "Don't have an account? Sign up"
                   }
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
                 </Link>
               </div>
+            </div>
+            
+            <div className="mt-8 text-center text-xs text-muted-foreground">
+              By continuing, you agree to our{' '}
+              <Link href="/legal?tab=terms" className="text-primary hover:underline">
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link href="/legal?tab=privacy" className="text-primary hover:underline">
+                Privacy Policy
+              </Link>
             </div>
           </div>
         </div>

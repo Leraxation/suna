@@ -5,8 +5,8 @@ echo       Suna AI Launcher
 echo ================================
 echo.
 
-REM Change to the Suna AI directory
-cd /d "C:\Users\ASUS\AI\AI_Agents_Projects\Suna-Ai-latest"
+REM Change to the Suna AI directory (current script location)
+cd /d "%~dp0"
 
 REM Check if Python is available
 python --version >nul 2>&1

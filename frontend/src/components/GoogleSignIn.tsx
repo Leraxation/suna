@@ -14,68 +14,6 @@ export default function GoogleSignIn({ returnUrl }: GoogleSignInProps) {
   const [isLoading, setIsLoading] = useState(false);
   const supabase = createClient();
 
-<<<<<<< HEAD
-  const handleGoogleSignIn = useCallback(
-    async (response: GoogleSignInResponse) => {
-      try {
-        setIsLoading(true);
-        const supabase = createClient();
-
-        console.log('Starting Google sign in process');
-
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: 'google',
-          token: response.credential,
-        });
-
-        if (error) throw error;
-
-        console.log(
-          'Google sign in successful, waiting for session...',
-        );
-
-        // Poll for session
-        const checkSession = async () => {
-          const { data: { session } } = await supabase.auth.getSession();
-          return session;
-        };
-
-        let session = await checkSession();
-        let attempts = 0;
-        const maxAttempts = 10;
-
-        while (!session && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          session = await checkSession();
-          attempts++;
-        }
-
-        if (!session) {
-          throw new Error('Session not established after sign-in');
-        }
-
-        console.log('Session established, redirecting to:', returnUrl || '/dashboard');
-        window.location.href = returnUrl || '/dashboard';
-      } catch (error) {
-        console.error('Error signing in with Google:', error);
-        setIsLoading(false);
-      }
-    },
-    [returnUrl],
-  );
-
-  useEffect(() => {
-    // Assign the callback to window object so it can be called from the Google button
-    window.handleGoogleSignIn = handleGoogleSignIn;
-
-    if (window.google && googleClientId) {
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: handleGoogleSignIn,
-        use_fedcm: true,
-        context: 'signin',
-        itp_support: true,
-=======
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
@@ -86,7 +24,6 @@ export default function GoogleSignIn({ returnUrl }: GoogleSignInProps) {
             returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''
           }`,
         },
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
       });
 
       if (error) {

@@ -12,12 +12,9 @@ This module provides a unified interface for making API calls to different LLM p
 
 from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
-<<<<<<< HEAD
 import json
 import asyncio
 import openai
-=======
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 import litellm
 from litellm.files.main import ModelResponse
 from utils.logger import logger
@@ -367,31 +364,9 @@ async def make_llm_api_call(
         logger.debug(f"Successfully received API response from {model_name}")
         # logger.debug(f"Response: {response}")
         return response
-
-<<<<<<< HEAD
-            response = await litellm.acompletion(**params)
-            logger.debug(f"Successfully received API response from {model_name}")
-            # logger.debug(f"Response: {response}")
-            return response
-
-        except (litellm.exceptions.RateLimitError, openai.APIError, json.JSONDecodeError) as e:
-            last_error = e
-            await handle_error(e, attempt, MAX_RETRIES)
-
-        except Exception as e:
-            logger.error(f"Unexpected error during API call: {str(e)}", exc_info=True)
-            raise LLMError(f"API call failed: {str(e)}")
-
-    error_msg = f"Failed to make API call after {MAX_RETRIES} attempts"
-    if last_error:
-        error_msg += f". Last error: {str(last_error)}"
-    logger.error(error_msg, exc_info=True)
-    raise LLMRetryError(error_msg)
-=======
     except Exception as e:
         logger.error(f"Unexpected error during API call: {str(e)}", exc_info=True)
         raise LLMError(f"API call failed: {str(e)}")
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
 # Initialize API keys on module import
 setup_api_keys()
