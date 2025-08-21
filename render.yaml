@@ -1,5 +1,26 @@
 services:
   - type: web
+    name: suna-ai-frontend
+    env: node
+    buildCommand: cd frontend && npm ci && npm run build
+    startCommand: cd frontend && npm start
+    plan: free
+    region: oregon
+    branch: main
+    rootDir: ./
+    envVars:
+      - key: NEXT_PUBLIC_ENV_MODE
+        value: production
+      - key: NEXT_PUBLIC_BACKEND_URL
+        value: https://suna-m91e.onrender.com/api
+      - key: NEXT_PUBLIC_URL
+        value: https://suna-m91e.onrender.com
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+
+  - type: web
     name: suna-ai-backend
     env: docker
     dockerfilePath: ./backend/Dockerfile
