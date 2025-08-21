@@ -46,11 +46,7 @@ dependencies = [
   "dramatiq==1.18.0",
   "prometheus-client==0.21.1",
   "langfuse==2.60.5",
-<<<<<<< HEAD
-  "Pillow>=9.0.0",
-=======
   "Pillow>=10.4.0",
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
   "mcp==1.9.4",
   "httpx==0.28.0",
   "aiohttp==3.12.0",
