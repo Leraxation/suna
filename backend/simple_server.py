@@ -142,7 +142,7 @@ except Exception as e:
                 self.wfile.write(b'Not Found')
 
 if __name__ == '__main__':
-    port = 8000
+    port = int(os.environ.get('PORT', 8000))
     server = HTTPServer(('0.0.0.0', port), EnhancedHandler)
     print(f"Enhanced Suna AI server running on port {port}")
     print(f"Health endpoint available at: http://0.0.0.0:{port}/api/health")
