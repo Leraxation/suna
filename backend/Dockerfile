@@ -3,15 +3,12 @@ FROM python:3.10-slim
 ENV ENV_MODE production
 WORKDIR /app
 
-<<<<<<< HEAD
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     pandoc \
+    git \
     && rm -rf /var/lib/apt/lists/*
-=======
-RUN apk add --no-cache curl git
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -45,21 +42,15 @@ RUN uv run python -c "import asyncio; print('Using asyncio from:', asyncio.__fil
 # Copy application code
 COPY . .
 
-<<<<<<< HEAD
 # Set environment variables for virtual environment
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 ENV PYTHONPATH="/app/.venv/lib/python3.10/site-packages:/app"
-=======
-# Calculate optimal worker count based on 16 vCPUs
-# Using (2*CPU)+1 formula for CPU-bound applications
-ENV WORKERS=7
+
+# Calculate optimal worker count based on available resources
+ENV WORKERS=8
 ENV THREADS=2
 ENV WORKER_CONNECTIONS=2000
->>>>>>> 573e711f397489d19d556d9f0b21f4393f363dfc
-
-# Calculate optimal worker count based on 16 vCPUs
-ENV WORKERS=8
 EXPOSE 8000
 
 # Health check
